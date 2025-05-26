@@ -79,10 +79,6 @@ Ast2Asg::operator()(ast::DeclarationSpecifiersContext* ctx)
       if (ret.first == Type::Spec::kINVALID) {
         if (p->Int())
           ret.first = Type::Spec::kInt;
-        else if(p->Void())
-          ret.first = Type::Spec::kVoid;
-        else if(p->Const())
-          ret.second.const_= 1;
         else
           ABORT(); // 未知的类型说明符
       }
@@ -141,8 +137,6 @@ eval_arrlen(Expr* expr)
       case UnaryExpr::kNeg:
         return -sub;
 
-      case UnaryExpr::kNot:
-        return !sub;
       default:
         ABORT();
     }
@@ -321,10 +315,6 @@ Ast2Asg::operator()(ast::UnaryExpressionContext* ctx)
       ret->op = ret->kNeg;
       break;
 
-    case ast::Exclaim:
-      ret->op=ret->kNot;
-      break;
-
     default:
       ABORT();
   }
@@ -338,12 +328,11 @@ Ast2Asg::operator()(ast::UnaryExpressionContext* ctx)
 Expr*
 Ast2Asg::operator()(ast::LogicalOrExpressionContext* ctx)
 {
-  std::cout<<"LogicalOrExpressionContext"<<ctx->getText()<<std::endl;
   auto children = ctx->children;
   if (children.size() == 1)
     return self(dynamic_cast<ast::LogicalAndExpressionContext*>(children[0]));
 
-  Expr* ret = self(dynamic_cast<ast::LogicalAndExpressionContext*>(children[0]));
+  Expr* ret = self(dynamic_cast<ast::LogicalOrExpressionContext*>(children[0]));
 
   for (unsigned i = 1; i < children.size(); ++i) {
     auto node = make<BinaryExpr>();
@@ -352,9 +341,10 @@ Ast2Asg::operator()(ast::LogicalOrExpressionContext* ctx)
                    ->getSymbol()
                    ->getType();
     switch (token) {
-      case ast::OrOr:  // 对应逻辑 OR (||)
-          node->op = node->kOr;
-          break;
+      case ast::ExclaimEqual:
+        node->op = node->kOr;
+        break;
+
       default:
         ABORT();
     }
@@ -371,13 +361,12 @@ Ast2Asg::operator()(ast::LogicalOrExpressionContext* ctx)
 Expr*
 Ast2Asg::operator()(ast::LogicalAndExpressionContext* ctx)
 {
-  std::cout<<"LogicalAndExpressionContext"<<ctx->getText()<<std::endl;
   auto children = ctx->children;
   if (children.size() == 1)
     return self(dynamic_cast<ast::EqualityExpressionContext*>(children[0]));
-  //支持将语法树类型children动态转换成表达式？EqualityExpressionContext  因为他的儿子就是EqualityExpressionContext类型
+  //支持将语法树类型children动态转换成表达式？
   
-  Expr* ret = self(dynamic_cast<ast::EqualityExpressionContext*>(children[0]));
+  Expr* ret = self(dynamic_cast<ast::LogicalAndExpressionContext*>(children[0]));
 
   for (unsigned i = 1; i < children.size(); ++i) {
     auto node = make<BinaryExpr>();
@@ -533,11 +522,8 @@ Ast2Asg::operator()(ast::PrimaryExpressionContext* ctx)
 
   if (auto p = ctx->expression()) {
     //不需要动态转换为primary,注意g4，否则会出现访问空指针的问题
-    //注意返回类型是ParenExpr 
     auto sub = self(dynamic_cast<ast::ExpressionContext*>(p));
-    auto ret = make<ParenExpr>();
-    ret->sub=sub;
-    return ret;
+    return sub;
   }
 
   ABORT();
@@ -585,10 +571,6 @@ Ast2Asg::operator()(ast::StatementContext* ctx)
 
   if (auto p = ctx->selectionStatement())
     return self(p);
-
-  if (auto p = ctx->iterationStatement())
-    return self(p);
-
   ABORT();
 }
 
@@ -641,14 +623,7 @@ Ast2Asg::operator()(ast::JumpStatementContext* ctx)
       ret->expr = self(p);
     return ret;
   }
-  if(ctx->Continue()){
-    auto ret=make<ContinueStmt>();
-    return ret;
-  }
-  if(ctx->Break()){
-    auto ret=make<BreakStmt>();
-    return ret;
-  }
+
   ABORT();
 }
 //new
@@ -678,19 +653,6 @@ Ast2Asg::operator()(ast::SelectionStatementContext* ctx)
   
   return ret;
 
-}
-
-//new
-Stmt*
-Ast2Asg::operator()(ast::IterationStatementContext* ctx)
-{
-    if (ctx->While()) {
-        auto ret = make<WhileStmt>();
-        ret->cond = self(ctx->expression());
-        ret->body = self(ctx->statement());
-        return ret;
-    }
-    ABORT();
 }
 //==============================================================================
 // 声明
@@ -797,7 +759,7 @@ Ast2Asg::operator()(ast::ParameterDeclarationContext* ctx)
   type->spec = sq.first;
   type->qual = sq.second;
   type->texp = texp;
-  auto decl = make<VarDecl>();////////////30卡了很久，不是decl
+  auto decl = make<VarDecl>();////////////30卡了很久
   decl->type =type;
   decl->name = name;
   return decl;
@@ -855,5 +817,9 @@ Ast2Asg::operator()(ast::InitDeclaratorContext* ctx, SpecQual sq)
   (*mSymtbl)[ret->name] = ret;
   return ret;
 }
+
+//new
+
+
 
 } // namespace asg

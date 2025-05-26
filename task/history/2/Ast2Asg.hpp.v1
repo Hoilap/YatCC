@@ -3,9 +3,27 @@
 #include "SYsUParser.h"
 #include "asg.hpp"
 
-namespace asg {
 
-using ast = SYsUParser;
+
+namespace asg {//asg 是一个命名空间，里面定义了类 Ast2Asg
+
+
+//new
+
+// struct IfStmt : asg::Stmt {//asg有定义
+//   Expr* cond = nullptr;
+//   Stmt* thenStmt = nullptr;
+//   Stmt* elseStmt = nullptr;
+// };
+
+// struct FunctionType : asg::TypeExpr {
+//   std::vector<asg::TypeExpr*> params;
+//   TypeExpr* sub = nullptr;
+// };
+//new
+
+
+using ast = SYsUParser;//ast 是 SYsUParser的别名（alias）
 
 class Ast2Asg
 {
@@ -30,20 +48,23 @@ public:
   std::pair<TypeExpr*, std::string> operator()(ast::DeclaratorContext* ctx,
                                                TypeExpr* sub);
 
-  std::pair<TypeExpr*, std::string> operator()(
-    ast::DirectDeclaratorContext* ctx,
-    TypeExpr* sub);
+  TypeExpr* operator()(ast::DeclaratorSuffixContext* ctx, TypeExpr* sub);
 
+  std::vector<TypeExpr*> operator()(ast::ParameterListContext* ctx);
   //============================================================================
   // 表达式
   //============================================================================
 
   Expr* operator()(ast::ExpressionContext* ctx);
 
+  Expr* operator()(ast::LogicalOrExpressionContext* ctx);
+
+  Expr* operator()(ast::LogicalAndExpressionContext* ctx);
+
   Expr* operator()(ast::AssignmentExpressionContext* ctx);
 
   Expr* operator()(ast::MultiplicativeExpressionContext* ctx);
-
+  
   Expr* operator()(ast::AdditiveExpressionContext* ctx);
 
   Expr* operator()(ast::UnaryExpressionContext* ctx);
@@ -54,11 +75,7 @@ public:
 
   Expr* operator()(ast::RelationalExpressionContext* ctx);
 
-  Expr* operator()(ast::EqualityExpressionContext* ctx);
-
-  Expr* operator()(ast::LogicalAndExpressionContext* ctx);
-
-  Expr* operator()(ast::LogicalOrExpressionContext* ctx);
+  Expr* operator()(ast::EqualityExpressionContext* ctx) ;//new
 
   Expr* operator()(ast::InitializerContext* ctx);
 
@@ -74,10 +91,9 @@ public:
 
   Stmt* operator()(ast::JumpStatementContext* ctx);
 
-  Stmt* operator()(ast::SelectionStatementContext* ctx);
+  Stmt* operator()(ast::SelectionStatementContext* ctx);//new
 
   Stmt* operator()(ast::IterationStatementContext* ctx);
-  
   //============================================================================
   // 声明
   //============================================================================
@@ -86,7 +102,7 @@ public:
 
   FunctionDecl* operator()(ast::FunctionDefinitionContext* ctx);
 
-  Decl*  operator()(ast::ParameterDeclarationContext* ctx);
+  VarDecl*  operator()(ast::ParameterDeclarationContext* ctx);
 
   Decl* operator()(ast::InitDeclaratorContext* ctx, SpecQual sq);
 

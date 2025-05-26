@@ -1,0 +1,202 @@
+parser grammar SYsUParser;
+
+options {
+  tokenVocab=SYsULexer;
+}
+
+//用“递归”的文法或者“直接”的文法都可以
+
+
+//表达式（从上往下优先级上高）
+primaryExpression //主表达式，例如变量名、常量
+    :   Identifier
+    |   Constant
+    |   LeftParen expression RightParen  // 新增括号表达式
+    ;
+
+
+postfixExpression//后缀表达式，例如函数调用、数组下标
+    : primaryExpression (LeftBracket  expression RightBracket)* //modify:增加数组下标操作
+    | primaryExpression
+;
+
+unaryExpression //一元表达式，如 a, +a
+    :
+    ( postfixExpression
+    |   unaryOperator unaryExpression
+    )
+    ;
+
+unaryOperator  //一元运算符
+    :   Plus | Minus
+    ;
+
+multiplicativeExpression //乘法表达式
+    :   unaryExpression ((Star|Div|Mod) unaryExpression)*
+    ;
+
+additiveExpression //加法表达式
+    :   multiplicativeExpression ((Plus|Minus) multiplicativeExpression)*
+    ;
+
+// 新增关系表达式（>、<、>=、<=）
+relationalExpression
+    : additiveExpression ((Less|Greater|LessEqual|GreaterEqual) additiveExpression)*
+    ;
+// 新增相等性表达式（==、!=）
+equalityExpression
+    : relationalExpression ((EqualEqual|ExclaimEqual) relationalExpression)*
+    ;
+
+logicalOrExpression
+    : logicalAndExpression (OrOr logicalAndExpression)*
+    ;
+
+logicalAndExpression
+    : equalityExpression (AndAnd equalityExpression)*
+    ;
+
+// 修改 assignmentExpression 的依赖
+assignmentExpression //赋值表达式
+    : logicalOrExpression
+    | unaryExpression Equal assignmentExpression
+    ;
+
+expression //通用表达式
+    :   assignmentExpression (Comma assignmentExpression)*
+    ;
+
+
+
+declaration //声明语句 declarationSpecifiers  int// initDeclaratorLista = 3//;
+    :   declarationSpecifiers initDeclaratorList? Semi
+    ;
+
+declarationSpecifiers //多个声明修饰符，比如 const int
+    :   declarationSpecifier+
+    ;
+
+declarationSpecifier//声明修饰符是类型标识符
+    :   typeSpecifier
+    ;
+
+initDeclaratorList// 多个初始化声明 int a=5,b=4;
+    :   initDeclarator (Comma initDeclarator)*
+    ;
+
+initDeclarator //初始化声明符 
+    :   declarator (Equal initializer)?
+    ;
+//declarator 是等号左侧 int* p、int arr[3]、char c
+//initializer 是等号右侧 NULL、{1, 2, 3}、'A'
+
+// typeSpecifier
+//     :   Const? Int
+//     ;
+typeSpecifier
+    :   Int
+    |   Const Int
+    |   Void
+    ;
+declarator//标识符+其他后缀
+    : Identifier declaratorSuffix*
+    ;
+
+//new  declaratorSuffix 是 [] 或者 ()，表示数组或者函数
+//使用 Identifier declaratorSuffix* + declaratorSuffix 的方式，可以清晰地限定只有 Identifier 是基础单元，接下来再判断是 [] 还是 ()
+//解决了int a[5]={0,1,2,3,4}是声明/定义的问题
+declaratorSuffix
+    : LeftBracket assignmentExpression? RightBracket
+    | LeftParen parameterList? RightParen
+    ;
+
+identifierList //a,b,c
+    :   Identifier (Comma Identifier)*
+    ;
+
+initializer //一个数/或者一个数组{0，1，2，3}
+    :   assignmentExpression
+    |   LeftBrace initializerList? Comma? RightBrace
+    ;
+
+initializerList
+    // :   designation? initializer (Comma designation? initializer)*
+    :   initializer (Comma initializer)*
+    ;
+
+//语句和函数定义
+statement
+    :   compoundStatement
+    |   expressionStatement
+    |   selectionStatement
+    |   jumpStatement
+    |   iterationStatement
+    ;
+selectionStatement//new 条件语句
+    //: If LeftParen assignmentExpression RightParen statement (Else statement)?
+    : If LeftParen expression RightParen statement (Else statement)?
+    ;
+    //注意是assignmentExpression（要增加等式/不等式表达式部分）
+    //注意statement 包含了compoundStatement（要增加复合语句部分）
+    //问题1：有多少个staement要用size()来判断，不能直接取[1]
+    //问题2：要允许statement没有大括号
+
+compoundStatement //复合语句，即大括号括起来的一堆语句或声明
+    :   LeftBrace blockItemList? RightBrace
+    ;
+
+blockItemList
+    :   blockItem+
+    ;
+
+blockItem
+    :   statement
+    |   declaration
+    ;
+
+expressionStatement
+    :   expression? Semi
+    ;
+iterationStatement
+    : While LeftParen expression RightParen statement
+    ;
+
+
+jumpStatement
+    :   (Return expression?)
+    Semi
+    ;
+
+compilationUnit
+    :   translationUnit? EOF
+    ;
+
+translationUnit
+    :   externalDeclaration+
+    ;
+
+externalDeclaration
+    :   functionDefinition
+    |   declaration
+    ;
+
+functionDefinition //函数定义
+    : declarationSpecifiers declarator LeftParen parameterList? RightParen  ( compoundStatement | Semi )
+    //int // main //( //parameterList //) // compoundStatement（含大括号）
+    ;
+
+parameterList //new 参数列表
+    : parameterDeclaration (Comma parameterDeclaration)*
+    ;
+
+parameterDeclaration //new
+    : declarationSpecifiers declarator?
+    ;
+//在实际的完整C语法中，文法会显得错综复杂
+//而对于我们初学者来说，使用下面这行文法更好理解，同时也更切合我们的实验任务
+//因为这种简单的实现方法将函数定义与变量定义分离，不会像完整C语法那样需要向下识别若干个分支才能判定那是一个函数定义
+
+
+
+
+

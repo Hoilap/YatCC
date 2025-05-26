@@ -6,8 +6,7 @@
 #include <fstream>
 #include <iostream>
 
-int
-main(int argc, char* argv[])
+int main(int argc, char* argv[])
 {
   if (argc != 3) {
     std::cout << "Usage: " << argv[0] << " <input> <output>\n";
@@ -37,7 +36,7 @@ main(int argc, char* argv[])
 
   antlr4::CommonTokenStream tokens(&lexer);
   SYsUParser parser(&tokens);
-
+  //同学们需要填写 SYsUParser.g4 以定义 AST
   auto ast = parser.compilationUnit();
   Obj::Mgr mgr;
 

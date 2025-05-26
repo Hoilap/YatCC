@@ -19,11 +19,8 @@ EmitIR::EmitIR(Obj::Mgr& mgr, llvm::LLVMContext& ctx, llvm::StringRef mid)
 llvm::Module&
 EmitIR::operator()(asg::TranslationUnit* tu)
 {
-  for (auto&& i : tu->decls){
+  for (auto&& i : tu->decls)
     self(i);
-    //每一次调用完都要设置一下当前函数指针为空
-    mCurFunc=nullptr;
-  }
   return mMod;
 }
 
@@ -135,7 +132,6 @@ EmitIR::operator()(ImplicitCastExpr* obj)
     case ImplicitCastExpr::kLValueToRValue: {
       auto ty = self(obj->sub->type);
       auto loadVal = irb.CreateLoad(ty, sub);
-      loadVal->setAlignment(mMod.getDataLayout().getABITypeAlign(ty));
       return loadVal;
     }
 
@@ -183,192 +179,40 @@ llvm::Value*
 EmitIR::operator()(BinaryExpr* obj)
 {
   llvm::Value *lftVal, *rhtVal;
+
+  lftVal = self(obj->lft);
+
   auto& irb = *mCurIrb;
-
+  rhtVal = self(obj->rht);
   switch (obj->op) {
-    case BinaryExpr::kAdd:{
-      lftVal = self(obj->lft);
-      rhtVal = self(obj->rht);
+    case BinaryExpr::kAdd:
       return irb.CreateAdd(lftVal, rhtVal);
-    }
-    case BinaryExpr::kSub:{//有可能是负号
-      lftVal = self(obj->lft);
-      rhtVal = self(obj->rht);
+    case BinaryExpr::kSub://有可能是负号
       return irb.CreateSub(lftVal, rhtVal);
-    }
-    case BinaryExpr::kMul:{
-      lftVal = self(obj->lft);
-      rhtVal = self(obj->rht);
+    case BinaryExpr::kMul:
       return irb.CreateMul(lftVal, rhtVal);
-    }
-
-    case BinaryExpr::kDiv:{
-      lftVal = self(obj->lft);
-      rhtVal = self(obj->rht);
+    case BinaryExpr::kDiv:
       return irb.CreateSDiv(lftVal, rhtVal);
-    }
-    case BinaryExpr::kMod:{
-      lftVal = self(obj->lft);
-      rhtVal = self(obj->rht);
+    case BinaryExpr::kMod:
       return irb.CreateSRem(lftVal, rhtVal);
-    }
-    case BinaryExpr::kEq:{
-      lftVal = self(obj->lft);
-      rhtVal = self(obj->rht);
+    case BinaryExpr::kEq:
       return irb.CreateICmpEQ(lftVal, rhtVal);
-    }
-    case BinaryExpr::kNe:{
-      lftVal = self(obj->lft);
-      rhtVal = self(obj->rht);
+    case BinaryExpr::kNe:
       return irb.CreateICmpNE(lftVal, rhtVal);
-    }
-    case BinaryExpr::kGt:{
-      lftVal = self(obj->lft);
-      rhtVal = self(obj->rht);
+    case BinaryExpr::kGt:
       return irb.CreateICmpSGT(lftVal, rhtVal);
-    }
-      
-    case BinaryExpr::kGe:{
-      lftVal = self(obj->lft);
-      rhtVal = self(obj->rht);
+    case BinaryExpr::kGe:
       return irb.CreateICmpSGE(lftVal, rhtVal);
-    }
-    case BinaryExpr::kLt: {
-      lftVal = self(obj->lft);
-      rhtVal = self(obj->rht);
+    case BinaryExpr::kLt: 
       return irb.CreateICmpSLT(lftVal, rhtVal);
-    }
-      
-    case BinaryExpr::kLe:{
-      lftVal = self(obj->lft);
-      rhtVal = self(obj->rht);
+    case BinaryExpr::kLe:
       return irb.CreateICmpSLE(lftVal, rhtVal);
-    }
-    
-    case BinaryExpr::kOr:
-    {
-      //https://arcsysu.github.io/YatCC/#/task3_doc/ir?id=%e6%88%96%e7%9a%84%e4%be%8b%e5%ad%90
-      //测例48：应直接翻译为 连续的 or 条件，而不是分层判断，因此要把左右对象构造放在中间
-
-      
-      llvm::BasicBlock *basebBlock =  mCurIrb->GetInsertBlock();
-      llvm::BasicBlock *rhsFalseBlock = llvm::BasicBlock::Create(mCtx, "lor.rhs", mCurFunc);
-      llvm::BasicBlock *rorEndBlock = llvm::BasicBlock::Create(mCtx, "lor.end", mCurFunc);
-      
-      
-      lftVal = self(obj->lft);//要放在前面，这样可以让做左边的逻辑表达式先处理
-      std::cout<<"left_or_finished\n";
-      // lftVal为真，则跳转到 lor.end，否则，跳转到 lor.rhs
-      if (!lftVal->getType()->isIntegerTy(1)) {  // 如果不是 i1 类型
-          lftVal = mCurIrb->CreateICmpNE(
-              lftVal,
-              llvm::ConstantInt::get(lftVal->getType(), 0),
-              "boolcast"
-          );
-      }
-      //mCurIrb->SetInsertPoint(basebBlock);//确保这一句br放在basebBlock//这句话没有必要
-      mCurIrb->CreateCondBr(lftVal, rorEndBlock, rhsFalseBlock);
-
-      /// 将当前 IR 插入点设置为 lor.rhs，因为要处理 exp_2，
-      mCurIrb->SetInsertPoint(rhsFalseBlock);
-      rhtVal = self(obj->rht);
-      if (!rhtVal->getType()->isIntegerTy(1)) {  // 如果不是 i1 类型
-          rhtVal = mCurIrb->CreateICmpNE(
-              rhtVal,
-              llvm::ConstantInt::get(rhtVal->getType(), 0),
-              "boolcast"
-          );
-      }
-      // 无条件跳转到 lor.end
-      mCurIrb->CreateBr(rorEndBlock);
-
-      
-      /// phi指令
-      mCurIrb->SetInsertPoint(rorEndBlock);
-      llvm::PHINode *phi = mCurIrb->CreatePHI(llvm::Type::getInt1Ty(mCtx), 2, "merge");
-      llvm::BasicBlock* block1;
-      if (auto* inst = llvm::dyn_cast<llvm::Instruction>(lftVal)) { //返回为一个phi指令
-          block1 = inst->getParent();
-      }
-      else block1=basebBlock;
-
-      llvm::BasicBlock* block2;
-      if (auto* inst = llvm::dyn_cast<llvm::Instruction>(rhtVal)) { //返回为一个phi指令
-          block2 = inst->getParent();
-      }
-      else block2=rhsFalseBlock;
-
-      
-      phi->addIncoming(mCurIrb->getInt1(true),  block1);
-      phi->addIncoming(rhtVal, block2);
-      return phi;
-    }
-    case BinaryExpr::kAnd:
-    {
-      
-      llvm::BasicBlock *basebBlock = mCurIrb->GetInsertBlock();
-      llvm::BasicBlock *lhsTrueBlock  = llvm::BasicBlock::Create(mCtx, "land.rhs", mCurFunc);
-      llvm::BasicBlock *landEndBlock = llvm::BasicBlock::Create(mCtx, "land.end", mCurFunc);
-      
-      // lftVal为真，则跳转到 land.end，否则，跳转到 land.rhs
-      
-      lftVal = self(obj->lft);//PHI node entries do not match predecessors!  %merge1 = phi i1 [ true, %entry ], [ %19, %lor.rhs ]
-      std::cout<<"left_and_finished\n";
-      //Assertion `getCondition()->getType()->isIntegerTy(1) && "May only branch on boolean predicates!"
-      if (!lftVal->getType()->isIntegerTy(1)) {  // 如果不是 i1 类型
-          lftVal = mCurIrb->CreateICmpNE(
-              lftVal,
-              llvm::ConstantInt::get(lftVal->getType(), 0),
-              "boolcast"
-          );
-      }
-      //mCurIrb->SetInsertPoint(basebBlock);
-      mCurIrb->CreateCondBr(lftVal, lhsTrueBlock, landEndBlock);
-      
-      /// 将当前 IR 插入点设置为 lor.rhs，因为要处理 exp_2，
-      mCurIrb->SetInsertPoint(lhsTrueBlock);
-      rhtVal = self(obj->rht);
-      //  Instruction does not dominate all uses!  %boolcast 的计算可能放在了错误的块里。
-      //要保证传的是布尔变量；否则报错llvm::PHINode::setIncomingValue(unsigned int, llvm::Value*): Assertion `getType() == V->getType() && "All operands to PHI node must be the same type as the PHI node!"' failed.
-      if (!rhtVal->getType()->isIntegerTy(1)) {  // 如果不是 i1 类型
-          rhtVal = mCurIrb->CreateICmpNE(
-              rhtVal,
-              llvm::ConstantInt::get(rhtVal->getType(), 0),
-              "boolcast"
-          );
-      }
-      // 无条件跳转到 lor.end
-      mCurIrb->CreateBr(landEndBlock);
-
-      /// phi指令
-      mCurIrb->SetInsertPoint(landEndBlock);
-      llvm::PHINode *phi = mCurIrb->CreatePHI(llvm::Type::getInt1Ty(mCtx), 2, "merge");
-      llvm::BasicBlock* block;//=========================new========================
-      if (auto* inst = llvm::dyn_cast<llvm::Instruction>(lftVal)) { //返回为一个phi指令
-          block = inst->getParent();
-      }
-      else block=basebBlock;
-      llvm::BasicBlock* block2;
-      if (auto* inst = llvm::dyn_cast<llvm::Instruction>(rhtVal)) { //返回为一个phi指令
-          block2 = inst->getParent();
-      }
-      else block2=lhsTrueBlock;
-
-      phi->addIncoming(mCurIrb->getInt1(false),  block);
-      phi->addIncoming(rhtVal, block2);
-      return phi;
-    }
     case BinaryExpr::kAssign://赋值表达式：可能是用常量或者变量，所以统一用trans_init
     {
-      lftVal = self(obj->lft);
-      //会导致二次调用，其实self函数调用放进指定位置的步骤不需要在这里完成
-      //rhtVal = self(obj->rht);
       trans_init(lftVal, obj->rht);
       return lftVal;
     }
     case BinaryExpr::kIndex: {
-      lftVal = self(obj->lft);
-      rhtVal = self(obj->rht);
       auto type = self(obj->type);
       return irb.CreateInBoundsGEP(type, lftVal, rhtVal);//此时rhtVal是一个索引变量std::vector<llvm::Value *> idxList
     }
@@ -422,24 +266,17 @@ EmitIR::operator()(Stmt* obj)
     //内建（intrinsics）函数,在 LLVM IR 的开头调用 llvm.stacksave 记录当前函数的栈高度
     // 创建调用 llvm.stacksave 的指令
     //auto sp = mCurIrb->CreateIntrinsic(llvm::Intrinsic::stacksave, {}, {},nullptr, "sp");
-    bool hasTerminator = analyzeTerminator(obj); // 检查是否有中止指令
-    if(hasTerminator==0){
-      llvm::CallInst* sp = mCurIrb->CreateStackSave();
-      //llvm::errs() << "Creating stacksave\n";
-      //llvm::errs() << "sp type: "; sp->getType()->print(llvm::errs()); llvm::errs() << "\n";
-      
-      /* 解析 CompoundStmt，生成 LLVM IR */
-      self(p);
-      /// 创建调用 llvm.stackrestore 的指令
-      mCurIrb->CreateStackRestore(sp);
-      //mCurIrb->CreateIntrinsic(llvm::Intrinsic::stackrestore, {}, {sp});
-      return;
-    }
-    else{
-      self(p);
-      return;
-    }
+    llvm::CallInst* sp = mCurIrb->CreateStackSave();
+
+    //llvm::errs() << "Creating stacksave\n";
+    //llvm::errs() << "sp type: "; sp->getType()->print(llvm::errs()); llvm::errs() << "\n";
     
+    /* 解析 CompoundStmt，生成 LLVM IR */
+    self(p);
+    /// 创建调用 llvm.stackrestore 的指令
+    mCurIrb->CreateStackRestore(sp);
+    //mCurIrb->CreateIntrinsic(llvm::Intrinsic::stackrestore, {}, {sp});
+    return;
 
   }
   if (auto p = obj->dcst<ReturnStmt>())
@@ -460,8 +297,7 @@ EmitIR::operator()(Stmt* obj)
     return self(p);
   if (auto p = obj->dcst<BreakStmt>())
     return self(p);
-  if(auto p=obj->dcst<NullStmt>())
-    return;
+
   ABORT();
 }
 
@@ -488,13 +324,10 @@ EmitIR::operator()(ReturnStmt* obj)
   else
     retVal = self(obj->expr);
 
-  if (retVal)
-    irb.CreateRet(retVal);
-  else
-    irb.CreateRetVoid();
+  mCurIrb->CreateRet(retVal);
 
-  //auto exitBb = llvm::BasicBlock::Create(mCtx, "return_exit", mCurFunc);
-  //mCurIrb->SetInsertPoint(exitBb);
+  auto exitBb = llvm::BasicBlock::Create(mCtx, "return_exit", mCurFunc);
+  mCurIrb->SetInsertPoint(exitBb);
 }
 
 void 
@@ -510,7 +343,7 @@ EmitIR::operator()(ExprStmt* obj)
 }
 
 llvm::Value* EmitIR::operator()(CallExpr* obj) {
-  auto func = reinterpret_cast<llvm::Function*>(self(obj->head));//obj->head是一个隐式调用类型，pointerdecay
+  auto func = reinterpret_cast<llvm::Function*>(self(obj->head));
   std::vector<llvm::Value*> params;
   for (int iter = 0; iter < obj->args.size(); iter++) {
     params.push_back(self(obj->args[iter]));
@@ -519,28 +352,11 @@ llvm::Value* EmitIR::operator()(CallExpr* obj) {
   //调用函数的写法：https://arcsysu.github.io/YatCC/#/task3_doc/ir?id=%e8%b0%83%e7%94%a8%e5%87%bd%e6%95%b0
 }
 
-bool EmitIR::analyzeTerminator(Stmt* stmt) {
-    if (auto ret = dynamic_cast<ReturnStmt*>(stmt)) {
-        return true; // 包含 return
-    }
-    if (auto br = dynamic_cast<BreakStmt*>(stmt)) {
-        return true; // 包含 break
-    }
-    if(auto br=dynamic_cast<ContinueStmt*>(stmt)){
-      return true;
-    }
-    if (auto compound = dynamic_cast<CompoundStmt*>(stmt)) {
-        for (auto& s : compound->subs) {
-            if (analyzeTerminator(s)) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
+
 void EmitIR::operator()(IfStmt* obj) {
   //https://arcsysu.github.io/YatCC/#/task3_doc/ir?id=coditional-branch-instruction
   auto &irb = *mCurIrb;
+
   auto condVal = self(obj->cond);
   llvm::Value* tf_val;
   auto ty = condVal->getType();
@@ -556,9 +372,9 @@ void EmitIR::operator()(IfStmt* obj) {
   }
 
 
-  auto thenBb = llvm::BasicBlock::Create(mCtx, "if.then", mCurFunc);
-  auto elseBb = llvm::BasicBlock::Create(mCtx, "if.else", mCurFunc);
-  auto exitBb = llvm::BasicBlock::Create(mCtx, "if.exit", mCurFunc);
+  auto thenBb = llvm::BasicBlock::Create(mCtx, "then", mCurFunc);
+  auto elseBb = llvm::BasicBlock::Create(mCtx, "else", mCurFunc);
+  auto exitBb = llvm::BasicBlock::Create(mCtx, "exit", mCurFunc);
 
   irb.CreateCondBr(tf_val, thenBb, elseBb); //基本块的跳转
 
@@ -566,72 +382,47 @@ void EmitIR::operator()(IfStmt* obj) {
   //mCurIrb->SetInsertPoint(thenBb);//上下方两种写法效果一致
   mCurIrb = std::make_unique<llvm::IRBuilder<>>(thenBb);
   if (obj->then) {
-    //self(obj->then);
-    bool hasTerminator = analyzeTerminator(obj->then); // 检查是否有中止指令
-    if (!hasTerminator) {
-        self(obj->then); // 只有无中止指令时才生成 compoundstmt
-        mCurIrb->CreateBr(exitBb);
-    } else {
-        self(obj->then); // 直接生成中止指令（如 return/break）
-    }
+    self(obj->then);
   }
-  // if (mCurIrb->GetInsertBlock()->getTerminator() == nullptr)//获取该基本块的终止指令（如 ret、br 等）【只会检查当前基本块的最后一条指令是否是终止指令】
-  //   mCurIrb->CreateBr(exitBb);//如果没有终止指令，就创建跳转create branch到 exit 块的指令
+  if (mCurIrb->GetInsertBlock()->getTerminator() == nullptr)//获取该基本块的终止指令（如 ret、br 等）
+    mCurIrb->CreateBr(exitBb);//如果没有终止指令，就创建跳转create branch到 exit 块的指令
 
 
   mCurIrb = std::make_unique<llvm::IRBuilder<>>(elseBb);
   if (obj->else_) {
-    //self(obj->else_);
-    bool hasTerminator = analyzeTerminator(obj->else_); // 检查是否有中止指令
-    if (!hasTerminator) {
-        self(obj->else_); // 只有无中止指令时才生成 compoundstmt+跳转指令
-        mCurIrb->CreateBr(exitBb);
-    } else {
-        self(obj->else_); // 直接生成中止指令（如 return/break）
-    }
+    self(obj->else_);
   }
-  else{
+  if (mCurIrb->GetInsertBlock()->getTerminator() == nullptr)
     mCurIrb->CreateBr(exitBb);
-  }
-  // if (mCurIrb->GetInsertBlock()->getTerminator() == nullptr)
-  //   mCurIrb->CreateBr(exitBb);
 
   mCurIrb = std::make_unique<llvm::IRBuilder<>>(exitBb);
 }
-struct LoopBlocks {
-    llvm::BasicBlock* cond;  // 循环条件检查块
-    llvm::BasicBlock* exit;  // 循环退出块
-};
 void EmitIR::operator()(ContinueStmt* obj) {
-    auto &irb = *mCurIrb;
-    auto* loopInfo = reinterpret_cast<LoopBlocks*>(obj->loop->any);
-    irb.CreateBr(loopInfo->cond);  // continue 跳回条件检查块
+  auto &irb = *mCurIrb;
+  auto jump = reinterpret_cast<llvm::BasicBlock*>(obj->loop->any)->getPrevNode();
+  irb.CreateBr(jump);
 }
 
 void EmitIR::operator()(BreakStmt* obj) {
-    auto &irb = *mCurIrb;
-    auto* loopInfo = reinterpret_cast<LoopBlocks*>(obj->loop->any);
-    irb.CreateBr(loopInfo->exit);  // break 跳到退出块
+  auto &irb = *mCurIrb;
+  auto jump = reinterpret_cast<llvm::BasicBlock*>(obj->loop->any)->getNextNode();
+  irb.CreateBr(jump);
 }
 
 void EmitIR::operator()(WhileStmt* obj) {
   auto &irb = *mCurIrb;
 
-  auto condBb = llvm::BasicBlock::Create(mCtx, "while.cond", mCurFunc);
-  auto bodyBb = llvm::BasicBlock::Create(mCtx, "while.body", mCurFunc);
-  auto exitBb = llvm::BasicBlock::Create(mCtx, "while.exit", mCurFunc);
-  // 存储 condBb 和 exitBb 到 obj->any
-  auto loopInfo = std::make_unique<LoopBlocks>(LoopBlocks{condBb, exitBb});
-  obj->any = loopInfo.get();
-
-  //跳转到条件语句块
+  auto condBb = llvm::BasicBlock::Create(mCtx, "cond", mCurFunc);
+  auto bodyBb = llvm::BasicBlock::Create(mCtx, "body", mCurFunc);
+  auto exitBb = llvm::BasicBlock::Create(mCtx, "exit", mCurFunc);
+  obj->any = bodyBb;
   irb.CreateBr(condBb);
+
   mCurIrb = std::make_unique<llvm::IRBuilder<>>(condBb);
   auto cond = self(obj->cond);
   if (mCurIrb->GetInsertBlock()->getTerminator() == nullptr)
     mCurIrb->CreateCondBr(cond, bodyBb, exitBb);
 
-  //body语句块
   mCurIrb = std::make_unique<llvm::IRBuilder<>>(bodyBb);
   self(obj->body);
   if (mCurIrb->GetInsertBlock()->getTerminator() == nullptr)
@@ -670,7 +461,6 @@ EmitIR::trans_init(llvm::Value* val, Expr* obj)
   if (auto p = obj->dcst<IntegerLiteral>()) {
     auto initVal = llvm::ConstantInt::get(self(p->type), p->val);//创建一个对应的 LLVM 整型常量
     irb.CreateStore(initVal, val);
-    
     return;
   }
 
@@ -703,7 +493,6 @@ EmitIR::trans_init(llvm::Value* val, Expr* obj)
   }
 
   // 也有可能是一个函数调用表达式 f(a, b)；
-  
   if(auto p = obj->dcst<CallExpr>()) {
     llvm::Value* rhs = (*this)(p);
     irb.CreateStore(rhs, val);
@@ -718,9 +507,61 @@ EmitIR::trans_init(llvm::Value* val, Expr* obj)
   }
 
   if (auto p = obj->dcst<InitListExpr>()) {
-    llvm::ArrayType* arrType = llvm::dyn_cast<llvm::ArrayType>(self(p->type));
-    // 处理初始化列表
-    handleArrayInitialization(val, arrType, p);
+    llvm::ArrayType* arrType = llvm::dyn_cast<llvm::ArrayType>(self(p->type));//完整类型
+    std::cout<<p->list.size()<<std::endl;//int a[4][2] = {};输出为1
+    for (int i = 0; i <arrType->getNumElements(); ++i) {//我看28标准答案ll是3210逆序输出，可能和这个有关?->无关
+      auto index = llvm::ConstantInt::get(llvm::Type::getInt32Ty(mCtx), i);
+      auto elementPtr =
+        irb.CreateInBoundsGEP(arrType, val, { irb.getInt32(0), index }); //计算应该要赋值的地址：arrType是一个数组类型，val是基地址，index是当前元素的索引
+      if (i < p->list.size() ){ 
+        if(auto p_sub = p->list[i]->dcst<InitListExpr>()){
+          trans_init(elementPtr, p->list[i]);
+        } 
+        else if(auto p_sub = p->list[i]->dcst<IntegerLiteral>()){
+          trans_init(elementPtr, p->list[i]);
+        }
+        else if(auto p_sub = p->list[i]->dcst<DeclRefExpr>()){
+          trans_init(elementPtr, p->list[i]);
+        }
+        else if(auto p_sub = p->list[i]->dcst<BinaryExpr>()){
+          trans_init(elementPtr, p->list[i]);
+        }
+        else if(auto p_sub = p->list[i]->dcst<UnaryExpr>()){
+          trans_init(elementPtr, p->list[i]);
+        }
+        else if(auto p_sub = p->list[i]->dcst<ParenExpr>()){
+          trans_init(elementPtr, p->list[i]);
+        }
+        else if(auto p_sub = p->list[i]->dcst<CallExpr>()){
+          trans_init(elementPtr, p->list[i]);
+        }
+        else if(auto p_sub = p->list[i]->dcst<ImplicitCastExpr>()){
+          trans_init(elementPtr, p->list[i]);
+        }
+        else{
+          //int[4][2]={}============直接不处理即可  第0个位置不初始化
+          // llvm::Type *pointerty = val->getType();
+          // if (auto *ptrTy = llvm::dyn_cast<llvm::PointerType>(pointerty)) {
+          //   llvm::Type *pointeeTy = ptrTy->getNonOpaquePointerElementType();  // 获取指针指向的类型
+          //   llvm::Type *innerTy = pointeeTy->getArrayElementType();
+          //   mCurIrb->CreateStore(llvm::Constant::getNullValue(innerTy), elementPtr);
+          // }
+        }
+      }
+      else{
+        //new为什么要分那么多类：排除所有类型，解决空初始列表的问题int a[4][2] = {};============直接不处理即可
+        //剩下的，要赋值为0
+        llvm::Type* innertype= arrType->getElementType();
+        mCurIrb->CreateStore(llvm::Constant::getNullValue(innertype), elementPtr);
+        // llvm::Type *ty = val->getType();
+        // if (auto ptrTy = llvm::dyn_cast<llvm::PointerType>(ty)) {  // 先检查是否是指针
+        //     llvm::Type *pointeeTy = ptrTy->getNonOpaquePointerElementType();  // 获取指向的类型
+        //     if (auto arrTy = llvm::dyn_cast<llvm::ArrayType>(pointeeTy)) {  // 检查是否是数组
+        //       mCurIrb->CreateStore(llvm::Constant::getNullValue(arrTy), elementPtr);
+        //     }
+        // }
+      }
+    }
     return;
   }
   //也有可能是一个初始化列表表达式 {1, 2, 3}；
@@ -738,52 +579,6 @@ EmitIR::trans_init(llvm::Value* val, Expr* obj)
   // 如果表达式不是整数字面量，则中断编译
   ABORT();
 }
-
-void
-EmitIR::handleArrayInitialization(llvm::Value* arrayPtr, llvm::ArrayType* arrType, InitListExpr* initList) {
-    auto& irb = *mCurIrb;
-    size_t arraySize = arrType->getNumElements();
-    llvm::Type* elementType = arrType->getElementType();
-    // 估算元素大小
-    unsigned elementSize = elementType->getPrimitiveSizeInBits() / 8;
-    // 对齐设定：
-    llvm::Align alignment = mMod.getDataLayout().getABITypeAlign(elementType);
-
-
-    // 1. 处理空初始化或单大括号情况inta[4][2] = {}; inta[4][2] = {0};
-    if (initList->list.size() == 1 && initList->list[0]->any==NULL ||
-        (initList->list.size() == 2 && initList->list[0] == nullptr && 
-              llvm::isa<llvm::ConstantInt>(self(initList->list[1])) && 
-              llvm::cast<llvm::ConstantInt>(self(initList->list[1]))->isZero()) ) {
-        irb.CreateMemSet(
-            arrayPtr,
-            llvm::ConstantInt::get(irb.getInt8Ty(), 0),
-            arraySize * elementSize,
-            alignment); // 直接使用Align对象
-        return;
-    }
-
-    // 情况2: 完全初始化（列表元素数量 >= 数组大小）
-    size_t initListSize = initList->list.size();
-    for (size_t i = 0; i < std::min(arraySize, initListSize); ++i) {
-        auto elementPtr = irb.CreateInBoundsGEP(
-            arrType, arrayPtr, {irb.getInt32(0), irb.getInt32(i)});
-        trans_init(elementPtr, initList->list[i]);
-    }
-
-    // 情况3: 剩余部分零初始化（如果数组大小 > 列表元素数量）
-    if (arraySize > initListSize) {
-        auto remainingPtr = irb.CreateInBoundsGEP(
-            arrType, arrayPtr, {irb.getInt32(0), irb.getInt32(initListSize)});
-        irb.CreateMemSet(
-            remainingPtr,
-            llvm::ConstantInt::get(irb.getInt64Ty(), 0),
-            (arraySize - initListSize) * elementSize,
-            alignment); // 使用相同的对齐方式
-    }
-}
-
-
 //教程的代码只处理了全局变量
 //局部变量没有在函数体（如 CompoundStmt）中为变量分配内存，缺乏符号表或作用域机制
 void
@@ -810,8 +605,6 @@ EmitIR::operator()(VarDecl* obj)
     //对于数组来说，ty有ContainedType/NumElements属性
 
     llvm::AllocaInst* alloca = mCurIrb->CreateAlloca(ty, nullptr, obj->name);//此时的
-    llvm::Align align = mMod.getDataLayout().getABITypeAlign(ty);
-    alloca->setAlignment(align);
     obj->any = alloca;
 
     if (obj->init) {//是否由初始化值？如果没有需要在store函数需要传一个空值
@@ -825,13 +618,14 @@ EmitIR::operator()(VarDecl* obj)
   } 
   else {
     // 1. 创建全局变量gvar，并为全局变量暂时先指定零初始化
-    auto ty=self(obj->type);  //llvm::Type::getInt64Ty(mCtx);
-    auto gvar = new llvm::GlobalVariable(mMod, ty, false, llvm::GlobalVariable::ExternalLinkage, nullptr, obj->name);
-    gvar->setAlignment(mMod.getDataLayout().getABITypeAlign(ty));  
+    auto ty = llvm::Type::getInt32Ty(mCtx); // 直接使用 LLVM 的 int32 类型
+    auto gvar = new llvm::GlobalVariable(
+      mMod, ty, false, llvm::GlobalVariable::ExternalLinkage, nullptr, obj->name);
+
     obj->any = gvar;
 
     // 默认初始化为 0
-    gvar->setInitializer(llvm::Constant::getNullValue(ty));
+    gvar->setInitializer(llvm::ConstantInt::get(ty, 0));
 
     if (obj->init == nullptr)
       return;
@@ -873,7 +667,7 @@ EmitIR::operator()(FunctionDecl* obj)
   if(obj->type->spec==Type::Spec::kInt) returnType=llvm::Type::getInt32Ty(mCtx);
   else if(obj->type->spec==Type::Spec::kVoid) returnType=llvm::Type::getVoidTy(mCtx);
   // 构造函数类型
-  llvm::FunctionType* fty = llvm::FunctionType::get(returnType, argTypes_,false);//最后一个布尔变量表示参数处理
+  llvm::FunctionType* fty = llvm::FunctionType::get(returnType, argTypes_,1);
 
 
 
@@ -887,7 +681,7 @@ EmitIR::operator()(FunctionDecl* obj)
   //为函数创建入口基本块（标签为 entry），设置 IR 插入点
   auto entryBb = llvm::BasicBlock::Create(mCtx, "entry", func);
   mCurIrb->SetInsertPoint(entryBb);
-  //mCurIrb = std::make_unique<llvm::IRBuilder<>>(entryBb);//上下取其一即可
+  mCurIrb = std::make_unique<llvm::IRBuilder<>>(entryBb);
   auto& entryIrb = *mCurIrb;
 
   // TODO: 添加对函数参数的处理//new
@@ -913,8 +707,7 @@ EmitIR::operator()(FunctionDecl* obj)
   for (int i = 0; i < obj->params.size(); i++) {
     auto param = obj->params[i];
     auto paramVar = mCurIrb->CreateAlloca(self(param->type), nullptr, param->name);
-    llvm::Align align = mMod.getDataLayout().getABITypeAlign(self(param->type));
-    paramVar->setAlignment(align);    
+    argIter->setName(param->name);
     entryIrb.CreateStore(argIter,paramVar);
     argIter++;
   }
@@ -923,12 +716,10 @@ EmitIR::operator()(FunctionDecl* obj)
   self(obj->body);
   auto& exitIrb = *mCurIrb;
 
-  if (!mCurIrb->GetInsertBlock()->getTerminator()) {
-    if (fty->getReturnType()->isVoidTy())
-      mCurIrb->CreateRetVoid();
-    else
-      mCurIrb->CreateUnreachable();
-  }
+  if (fty->getReturnType()->isVoidTy())
+    exitIrb.CreateRetVoid();
+  else
+    exitIrb.CreateUnreachable();
 }
 
 

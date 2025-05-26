@@ -23,8 +23,7 @@ struct Ast2Asg::Symtbl : public std::unordered_map<std::string, Decl*>
   Decl* resolve(const std::string& name);
 };
 
-Decl*
-Ast2Asg::Symtbl::resolve(const std::string& name)
+Decl* Ast2Asg::Symtbl::resolve(const std::string& name)
 {
   auto iter = find(name);
   if (iter != end())
@@ -33,7 +32,7 @@ Ast2Asg::Symtbl::resolve(const std::string& name)
   return mPrev->resolve(name);
 }
 
-TranslationUnit* //对整个翻译单元进行类型推导。这是类型推导过程的入口点。
+TranslationUnit*
 Ast2Asg::operator()(ast::TranslationUnitContext* ctx)
 {
   auto ret = make<asg::TranslationUnit>();
@@ -74,19 +73,21 @@ Ast2Asg::operator()(ast::DeclarationSpecifiersContext* ctx)
 {
   SpecQual ret = { Type::Spec::kINVALID, Type::Qual() };
 
-  for (auto&& i : ctx->declarationSpecifier()) {
+  for (auto&& i : ctx->declarationSpecifier()) { //ctx->declarationSpecifier()返回的是一个向量DeclarationSpecifierContext(由ast/g4定义)
     if (auto p = i->typeSpecifier()) {
+      //std::cout<<"p->getText() = "<<p->getText()<<std::endl;
+      if (p->Const()) {
+        ret.second.const_ = true; // 标记为 const
+      }
       if (ret.first == Type::Spec::kINVALID) {
         if (p->Int())
           ret.first = Type::Spec::kInt;
-        else if(p->Void())
+        else if(p->Void()){
           ret.first = Type::Spec::kVoid;
-        else if(p->Const())
-          ret.second.const_= 1;
+        }
         else
           ABORT(); // 未知的类型说明符
       }
-
       else
         ABORT(); // 未知的类型说明符
     }
@@ -98,12 +99,6 @@ Ast2Asg::operator()(ast::DeclarationSpecifiersContext* ctx)
   return ret;
 }
 
-std::pair<TypeExpr*, std::string>
-Ast2Asg::operator()(ast::DeclaratorContext* ctx, TypeExpr* sub)
-{
-  std::cout<<"DeclaratorContext"<<ctx->getText()<<std::endl;
-  return self(ctx->directDeclarator(), sub);
-}
 
 static int
 eval_arrlen(Expr* expr)
@@ -141,8 +136,6 @@ eval_arrlen(Expr* expr)
       case UnaryExpr::kNeg:
         return -sub;
 
-      case UnaryExpr::kNot:
-        return !sub;
       default:
         ABORT();
     }
@@ -173,44 +166,113 @@ eval_arrlen(Expr* expr)
   ABORT();
 }
 
+//方法接收一个声明上下文和可能的子类型表达式（例如int a[5][6],母类型就是int [5][6] 子类型就是int[6]），并返回一个包含类型表达式TypeExpr*和变量名std::string的pair。
 std::pair<TypeExpr*, std::string>
-Ast2Asg::operator()(ast::DirectDeclaratorContext* ctx, TypeExpr* sub)
+Ast2Asg::operator()(ast::DeclaratorContext* ctx, TypeExpr* sub)
 {
-  if (auto p = ctx->Identifier())
-    return { sub, p->getText() };
-  //eg a[10][20]  [20] 是assignmentExpression
+  // declarator//标识符+其他后缀
+  //   : Identifier declaratorSuffix*
+  //   ;
+  //因为这里是*，所以我们要循环
+  // 获取变量名
+  std::string name = ctx->Identifier()->getText();
+  // 顺序处理 declaratorSuffix*,注意应该倒过来处理
+  auto suffixes = ctx->declaratorSuffix();//是一个DeclaratorSuffixContext的向量
+  for (auto it = suffixes.rbegin(); it != suffixes.rend(); ++it) {
+      std::cout<<"it=" << (*it)->getText()<<std::endl;
+      sub = self(*it, sub);  // 注意 self 返回的是 pair
+  }
+  return {sub, name};
+
+  //self==(*this)也就是调用当前类的 operator() 成员函数
+  //return self(ctx->declaratorSuffix(), sub);
+}
+
+
+//Q sub到底是一个什么东西？是子部分的类型？
+//Q 如何确定返回的是什么？
+TypeExpr*
+Ast2Asg::operator()(ast::DeclaratorSuffixContext* ctx, TypeExpr* sub)
+{
+  std::cout<<ctx->getText()<<std::endl;
+  // Handle array types
   if (ctx->LeftBracket()) {
-    auto arrayType = make<ArrayType>();
-    arrayType->sub = sub;
+      auto arrayType = make<ArrayType>();
+      arrayType->sub = sub;
 
-    if (auto p = ctx->assignmentExpression())
-      arrayType->len = eval_arrlen(self(p));
-    else
-      arrayType->len = ArrayType::kUnLen;
+      if (auto p = ctx->assignmentExpression())
+          arrayType->len = eval_arrlen(self(p));
+      else
+          arrayType->len = ArrayType::kUnLen;
 
-    return self(ctx->directDeclarator(), arrayType);//递归调用
+      return arrayType;
   }
 
+  // Handle function parameters
+  if (ctx->LeftParen()) {
+      auto funcType = make<FunctionType>();
+      funcType->sub = sub;
+      
+      if (auto p = ctx->parameterList()) {
+          for (auto&& param : p->parameterDeclaration()) {
+              VarDecl* paramDecl= make<VarDecl>();
+              funcType->params.push_back(paramDecl->type);  // ✅ 取类型进函数类型列表
+          }
+      }
+      return funcType;
+  }
   ABORT();
 }
+
 
 //==============================================================================
 // 表达式
 //==============================================================================
+Expr* 
+Ast2Asg::operator()(ast::LogicalOrExpressionContext* ctx) {
+  auto list = ctx->logicalAndExpression();
+  Expr* ret = self(list[0]); // 先处理第一个逻辑与表达式
+
+  for (unsigned i = 1; i < list.size(); ++i) {
+    auto node = make<BinaryExpr>();
+    node->op = BinaryExpr::kOr; // 逻辑或运算符（你自己定义的枚举值）
+    node->lft = ret;
+    node->rht = self(list[i]);
+    ret = node;
+  }
+
+  return ret;
+}
+
+
+Expr* 
+Ast2Asg::operator()(ast::LogicalAndExpressionContext* ctx) {
+  auto list = ctx->equalityExpression();
+  Expr* ret = self(list[0]); // 先处理第一个相等表达式
+
+  for (unsigned i = 1; i < list.size(); ++i) {
+    auto node = make<BinaryExpr>();
+    node->op = BinaryExpr::kAnd; // 逻辑与运算符（你自己定义的枚举值）
+    node->lft = ret;
+    node->rht = self(list[i]);
+    ret = node;
+  }
+
+  return ret;
+}
+
 
 Expr*
 Ast2Asg::operator()(ast::ExpressionContext* ctx)
 {
-  std::cout<< "ExpressionContext"<<ctx->getText()<<std::endl;
-
-  auto list = ctx->assignmentExpression();
+  auto list = ctx->assignmentExpression(); //返回一个向量
   Expr* ret = self(list[0]);
 
   for (unsigned i = 1; i < list.size(); ++i) {
     auto node = make<BinaryExpr>();
     node->op = node->kComma;
     node->lft = ret;
-    node->rht = self(list[i]);
+    node->rht = self(list[i]); //list[i]是一个新分配的对象AssignmentExpressionContext
     ret = node;
   }
 
@@ -220,18 +282,15 @@ Ast2Asg::operator()(ast::ExpressionContext* ctx)
 Expr*
 Ast2Asg::operator()(ast::AssignmentExpressionContext* ctx)
 {
-  std::cout<<"AssignmentExpressionContext"<<ctx->getText()<<std::endl;
-  //如果是logicalOrExpression分支，因为分支只有一个，就是logicalOrExpression，所以直接返回
-  if (auto p = ctx->logicalOrExpression())  return self(p);
+  if (auto p = ctx->logicalOrExpression())
+    return self(p);
 
-  // 如果是assignmentExpression分支，需要构造一个BinaryExpr
   auto ret = make<BinaryExpr>();
   ret->op = ret->kAssign;
   ret->lft = self(ctx->unaryExpression());
   ret->rht = self(ctx->assignmentExpression());
   return ret;
 }
-//new：没有写这个函数时会导致通过这个ast2asg代码进入时报错
 Expr*
 Ast2Asg::operator()(ast::MultiplicativeExpressionContext* ctx)
 {
@@ -265,19 +324,30 @@ Ast2Asg::operator()(ast::MultiplicativeExpressionContext* ctx)
     node->rht = self(dynamic_cast<ast::UnaryExpressionContext*>(children[++i]));
     ret = node;
   }
+
   return ret;
 }
 
-//modify
 Expr*
 Ast2Asg::operator()(ast::AdditiveExpressionContext* ctx)
 {
-  auto children = ctx->children;
-  Expr* ret = self(dynamic_cast<ast::MultiplicativeExpressionContext*>(children[0]));
+  auto children = ctx->children; //childrens是该棵语法树的子节点（一串）
+  Expr* ret = self(dynamic_cast<ast::MultiplicativeExpressionContext*>(children[0])); 
+  //解析 AdditiveExpression 的 第一个一元表达式，存入 ret。
 
   for (unsigned i = 1; i < children.size(); ++i) {
+    //遍历 AdditiveExpression 的剩余子节点，children[i] 代表 + 或 - 号。
     auto node = make<BinaryExpr>();
-
+    //创建了一个字节点，应该是一个一元表达式BinaryExpr
+    //asg已经定义好了所有的表达式类型，点进去可以看到该类的属性op/lft/rgt等，我们要修改他们
+    //ast上下文
+    // 处理整个编译单元（TranslationUnit）。
+    // 转换类型说明符（DeclarationSpecifiersContext）和声明符（DeclaratorContext、DirectDeclaratorContext）。
+    // 转换各种表达式（如AssignmentExpressionContext、AdditiveExpressionContext等）。
+    // 转换语句（StatementContext、CompoundStatementContext等）。
+    // 转换声明和函数定义（DeclarationContext、FunctionDefinitionContext等）。
+    //asg 语句
+    //Decl/stmt/expr/type
     auto token = dynamic_cast<antlr4::tree::TerminalNode*>(children[i])
                    ->getSymbol()
                    ->getType();
@@ -294,10 +364,19 @@ Ast2Asg::operator()(ast::AdditiveExpressionContext* ctx)
         ABORT();
     }
 
+    //左子树 (lft)：当前 ret 存储的 Expr 作为左操作数。
+    //右子树 (rht)：解析下一个 unaryExpression，作为右操作数。
+    //更新 ret，使其指向最新的 BinaryExpr 节点，形成 二叉树结构。
     node->lft = ret;
     node->rht = self(dynamic_cast<ast::MultiplicativeExpressionContext*>(children[++i]));
     ret = node;
   }
+  //例子：1 + 2 - 3
+  /*
+  第一轮：解析 1，存入 ret。
+	遇到 +：生成 BinaryExpr，左子树是 1，右子树是 2。
+	遇到 -：生成 BinaryExpr，左子树是 + 号表达式，右子树是 3。
+  */
   return ret;
 }
 
@@ -306,7 +385,7 @@ Ast2Asg::operator()(ast::UnaryExpressionContext* ctx)
 {
   if (auto p = ctx->postfixExpression())
     return self(p);
-
+  //我们做的就是让指针们指向正确的 make 出来的实空间，这个实空间往往也具备一些指针成员，指向其他的实空间
   auto ret = make<UnaryExpr>();
 
   switch (
@@ -321,10 +400,6 @@ Ast2Asg::operator()(ast::UnaryExpressionContext* ctx)
       ret->op = ret->kNeg;
       break;
 
-    case ast::Exclaim:
-      ret->op=ret->kNot;
-      break;
-
     default:
       ABORT();
   }
@@ -334,76 +409,6 @@ Ast2Asg::operator()(ast::UnaryExpressionContext* ctx)
   return ret;
 }
 
-//new
-Expr*
-Ast2Asg::operator()(ast::LogicalOrExpressionContext* ctx)
-{
-  std::cout<<"LogicalOrExpressionContext"<<ctx->getText()<<std::endl;
-  auto children = ctx->children;
-  if (children.size() == 1)
-    return self(dynamic_cast<ast::LogicalAndExpressionContext*>(children[0]));
-
-  Expr* ret = self(dynamic_cast<ast::LogicalAndExpressionContext*>(children[0]));
-
-  for (unsigned i = 1; i < children.size(); ++i) {
-    auto node = make<BinaryExpr>();
-
-    auto token = dynamic_cast<antlr4::tree::TerminalNode*>(children[i])
-                   ->getSymbol()
-                   ->getType();
-    switch (token) {
-      case ast::OrOr:  // 对应逻辑 OR (||)
-          node->op = node->kOr;
-          break;
-      default:
-        ABORT();
-    }
-
-    node->lft = ret;
-    node->rht =
-      self(dynamic_cast<ast::LogicalAndExpressionContext*>(children[++i]));
-    ret = node;
-  }
-
-  return ret;
-}
-//new
-Expr*
-Ast2Asg::operator()(ast::LogicalAndExpressionContext* ctx)
-{
-  std::cout<<"LogicalAndExpressionContext"<<ctx->getText()<<std::endl;
-  auto children = ctx->children;
-  if (children.size() == 1)
-    return self(dynamic_cast<ast::EqualityExpressionContext*>(children[0]));
-  //支持将语法树类型children动态转换成表达式？EqualityExpressionContext  因为他的儿子就是EqualityExpressionContext类型
-  
-  Expr* ret = self(dynamic_cast<ast::EqualityExpressionContext*>(children[0]));
-
-  for (unsigned i = 1; i < children.size(); ++i) {
-    auto node = make<BinaryExpr>();
-
-    auto token = dynamic_cast<antlr4::tree::TerminalNode*>(children[i])
-                   ->getSymbol()
-                   ->getType();
-    switch (token) {
-      case ast::AndAnd:
-        node->op = node->kAnd;
-        break;
-
-      default:
-        ABORT();
-    }
-
-    node->lft = ret;
-    node->rht =
-      self(dynamic_cast<ast::EqualityExpressionContext*>(children[++i]));
-    ret = node;
-  }
-
-  return ret;
-}
-
-//new
 Expr*
 Ast2Asg::operator()(ast::RelationalExpressionContext* ctx) //new
 {
@@ -440,7 +445,6 @@ Ast2Asg::operator()(ast::RelationalExpressionContext* ctx) //new
     
     return ret;
 }
-//new
 Expr* 
 Ast2Asg::operator()(ast::EqualityExpressionContext* ctx) {//new
   auto children = ctx->children;
@@ -464,45 +468,20 @@ Ast2Asg::operator()(ast::EqualityExpressionContext* ctx) {//new
   }
   return ret;
 }
-
-//modify
 Expr*
 Ast2Asg::operator()(ast::PostfixExpressionContext* ctx)
 {
-  if (auto p = ctx->primaryExpression()) {
-    auto sub = self(dynamic_cast<ast::PrimaryExpressionContext*>(p));
-    return sub;
-  }
-  if(auto p = ctx->LeftBracket()){//数组表达式a[i]
-    auto ret = make<BinaryExpr>();
-    ret->op = ret->kIndex;
-    ret->rht = self(ctx->expression());
-    ret->lft = self(ctx->postfixExpression());//递归调用
-    return ret;
-  }
-  if(auto q=ctx->LeftParen()){ //函数调用f(a,b)
-    auto ret = make<CallExpr>();
-    if (auto p = ctx->postfixExpression()) {//这里没有递归调用，存异？
-      auto name = p->getText();
-      auto head = make<DeclRefExpr>();
-      head->decl = mSymtbl->resolve(name);
-      ret->head = head;
-    }
-  
-    if (auto p = ctx->argumentExpressionList()) { //只有这个地方用到argumentExpressionList，就不额外写重载函数了
-      for (auto&& i : p->assignmentExpression()) {
-        ret->args.push_back(self(i));
-      }
-    }
-    return ret;
-  }
-  
+  //self(x) 是处理子节点生成对应 Expr* 的调用
+  auto children = ctx->children;
+  auto sub = self(dynamic_cast<ast::PrimaryExpressionContext*>(children[0]));
+
+  return sub;
 }
 
 Expr*
 Ast2Asg::operator()(ast::PrimaryExpressionContext* ctx)
 {
-  std::cout<<"primary"<<ctx->getText()<<std::endl;
+
   if (auto p = ctx->Identifier()) {
     auto name = p->getText();
     auto ret = make<DeclRefExpr>();
@@ -530,22 +509,19 @@ Ast2Asg::operator()(ast::PrimaryExpressionContext* ctx)
 
     return ret;
   }
-
+  
+  // 新增：处理括号表达式 (expression)
   if (auto p = ctx->expression()) {
-    //不需要动态转换为primary,注意g4，否则会出现访问空指针的问题
-    //注意返回类型是ParenExpr 
-    auto sub = self(dynamic_cast<ast::ExpressionContext*>(p));
-    auto ret = make<ParenExpr>();
-    ret->sub=sub;
-    return ret;
+    // 直接返回括号内的表达式，不需要额外节点
+    return self(p);
   }
-
   ABORT();
 }
 
 Expr*
 Ast2Asg::operator()(ast::InitializerContext* ctx)
 {
+  //注意这是一个递归文法
   if (auto p = ctx->assignmentExpression())
     return self(p);
 
@@ -566,6 +542,21 @@ Ast2Asg::operator()(ast::InitializerContext* ctx)
 
   return ret;
 }
+//new
+VarDecl*
+Ast2Asg::operator()(ast::ParameterDeclarationContext* ctx)
+{
+  auto sq = self(ctx->declarationSpecifiers());
+  auto [texp, name] = self(ctx->declarator(), nullptr);
+  auto type = make<Type>();
+  type->spec = sq.first;
+  type->qual = sq.second;
+  type->texp = texp;
+  auto decl = make<VarDecl>();
+  decl->type =type;
+  decl->name = name;
+  return decl;
+}
 
 //==============================================================================
 // 语句
@@ -585,10 +576,6 @@ Ast2Asg::operator()(ast::StatementContext* ctx)
 
   if (auto p = ctx->selectionStatement())
     return self(p);
-
-  if (auto p = ctx->iterationStatement())
-    return self(p);
-
   ABORT();
 }
 
@@ -633,24 +620,19 @@ Ast2Asg::operator()(ast::ExpressionStatementContext* ctx)
 Stmt*
 Ast2Asg::operator()(ast::JumpStatementContext* ctx)
 {
-  std::cout<<ctx->getText()<<std::endl;
   if (ctx->Return()) {
     auto ret = make<ReturnStmt>();
     ret->func = mCurrentFunc;
-    if (auto p = ctx->expression())
+    if (auto p = ctx->expression()) {
+      std::cout<<p->getText() <<std::endl;
       ret->expr = self(p);
+    }
     return ret;
   }
-  if(ctx->Continue()){
-    auto ret=make<ContinueStmt>();
-    return ret;
-  }
-  if(ctx->Break()){
-    auto ret=make<BreakStmt>();
-    return ret;
-  }
+
   ABORT();
 }
+
 //new
 Stmt*
 Ast2Asg::operator()(ast::SelectionStatementContext* ctx)
@@ -662,11 +644,11 @@ Ast2Asg::operator()(ast::SelectionStatementContext* ctx)
     Stmt *then{ nullptr }, *else_{ nullptr };
   };
   */
-  //34还没去到这里就停了，说明语法分析就出了问题
+  //还没去到这里就停了，说明语法分析就出了问题
   std::cout<<ctx->getText() <<std::endl;
   auto ret = make<IfStmt>();
-  ret->cond = self(ctx->expression());
-  ASSERT(ctx->statement().size() >= 1);
+  ret->cond = self(ctx->assignmentExpression());
+  
   // Handle then clause
   auto statements = ctx->statement();
   if (statements.size() > 0)
@@ -679,7 +661,6 @@ Ast2Asg::operator()(ast::SelectionStatementContext* ctx)
   return ret;
 
 }
-
 //new
 Stmt*
 Ast2Asg::operator()(ast::IterationStatementContext* ctx)
@@ -692,6 +673,7 @@ Ast2Asg::operator()(ast::IterationStatementContext* ctx)
     }
     ABORT();
 }
+
 //==============================================================================
 // 声明
 //==============================================================================
@@ -700,116 +682,138 @@ std::vector<Decl*>
 Ast2Asg::operator()(ast::DeclarationContext* ctx)
 {
   std::vector<Decl*> ret;
-
+  std::cout<<"ctx->getText() = "<<ctx->getText()<<std::endl;
   auto specs = self(ctx->declarationSpecifiers());
 
   if (auto p = ctx->initDeclaratorList()) {
-    for (auto&& j : p->initDeclarator())
+    for (auto&& j : p->initDeclarator()){
+      std::cout<<"j->getText() = "<<j->getText()<<std::endl;
       ret.push_back(self(j, specs));
+    }
+
   }
 
   // 如果 initDeclaratorList 为空则这行声明语句无意义
   return ret;
 }
 
+//new
+// std::vector<TypeExpr*> Ast2Asg::operator()(ast::ParameterListContext* ctx)
+// {
+//   std::vector<TypeExpr*> ret;
+//   for (auto* param : ctx->parameterDeclaration()) {
+//     ret.push_back(self(param));
+//   }
+//   return ret;
+// }
+
+//my version + rfr
 FunctionDecl*
-Ast2Asg::operator()(ast::FunctionDefinitionContext* ctx){
-  std::cout<<"FunctionDefinitionContext"<<ctx->getText()<<std::endl;
+Ast2Asg::operator()(ast::FunctionDefinitionContext* ctx)
+{
+  //为什么返回一个函数声明？因为定义包括了声明
   auto ret = make<FunctionDecl>();
   mCurrentFunc = ret;
-  
+
   auto type = make<Type>();
   ret->type = type;
-  
+  //type有texp/spec/qual三个成员
   auto sq = self(ctx->declarationSpecifiers());
   type->spec = sq.first, type->qual = sq.second;
-  
-  auto [texp, name] = self(ctx->directDeclarator(), nullptr);//右侧调用的函数为 std::pair<TypeExpr*, std::string> Ast2Asg::operator()(ast::Direct_declaratorContext* ctx, TypeExpr* sub)
-  //这里解释一下texp的类型，即TypeExpr*，你可以简单认为他是处理数组定义的，例如对于int a[5][3]，TypeExpr*负责记录这些维度的长度
-  //那么texp作为一个指针类型，即TypeExpr*类型，这个指针若非空，是要指向一个实空间的，一个例子便是指向 make<ArrayType>(); 的实空间
-  //按Ctrl点开 ArrayType 跳转到定义，发现struct ArrayType : TypeExpr{
-  //TypeExpr作为父亲类有一个指针成员sub，而ArrayType作为儿子类有一个int类型
-  //当然ArrayType是继承了父亲类的，可以认为ArrayType有一个指针成员sub有一个int类型一共两项内容。
-  //于是texp这个TypeExpr*类型可以指向一个ArrayType；
-  //这个ArrayType的int成员记录下第一维的长度5（用上文的例子）、sub成员则指向另一个ArrayType（用于记录第二维度的长度3）
-  //实际上这就是一个链表结构，你可以从右侧这个函数一窥这个“链表”是怎么造出来的 std::pair<TypeExpr*, std::string> Ast2Asg::operator()(ast::Direct_declaratorContext* ctx, TypeExpr* sub)
 
-
+  auto [texp, name] = self(ctx->declarator(), nullptr);//为了适应做了改动
+  //texp 是 TypeExpr* 类型的指针，TypeExpr*负责记录这些维度的长度
+  //对一个二维数组的声明int a[5][3]：这个ArrayType的int成员记录下第一维的长度5（用上文的例子）、sub成员则指向另一个ArrayType（用于记录第二维度的长度3）
+  //在这里，texp是一个函数类型funcType
   auto funcType = make<FunctionType>();
   funcType->sub = texp;
-  type->texp = funcType;
+  type->texp = funcType; 
   ret->name = std::move(name);
-  //观察代码，发现有三层结构，
-  //auto ret = make<FunctionDecl>();
-  //auto type = make<Type>();
-  //auto funcType = make<FunctionType>();
-  //其中ret明显是完整描述整个函数的，type则由type->spec type->qual可以看出来有限定的功能（例如Const）
-  //此外按照type的意义，实际上这个type能够完整描述除了实际取值外，该函数的所有【返回类型、参数类型】，但是不知道参数名字，例如函数int a[2][4](int b,char c[3]);那么只看type就能知道返回一个int[2][4]，参数是int ,char [3]
-  //由于type的make<Type>()类型不能带参数列表，因此type通过type->texp=funcType指向了它的代理人，让代理人来存放参数列表
-  //funcType作为type的代理人，它有两项内容，参数列表params以及TypeExpr*指针sub，我们还是用函数int a[2][4](int b,char c[3]);的例子
-  //funcType的sub用来存放[2][4]，参数列表params第一项存放int ，第二项存放char [3]
-  //ret存放函数名name，函数实现body，以及一个参数列表（含有参数名字）
-  //注：我们不考虑int a[2][4](int b=10,char c[3]);这种带默认值的
-  
-  Symtbl localDecls(self);
 
-  if(auto plist = ctx->parameterList()){
-    for (auto&& param : plist->parameterDeclaration()) {
-      auto paramDecl = self(param);//param的实空间是make<VarDecl>()
-      funcType->params.push_back(paramDecl->type);
-      ret->params.push_back(paramDecl);
-      localDecls[paramDecl->name] = paramDecl;//本地符号表，保存当前作用域的所有声明
-    }
-  }
-  (*mSymtbl)[ret->name] = ret; // 立刻注册到符号表
-  if(ctx->compoundStatement()){
-      ret->body = self(ctx->compoundStatement());
-  }
-  //为什么main函数没有放进符号表
-  std::cout << "Lookup func in symtbl: " << (mSymtbl->count("func") ? "found" : "not found") << std::endl;
+  // Symtbl localDecls(self);
 
-  //将函数定义加入符号表，以允许递归调用
-  //当函数定义未加入符号表时，调用 self(ctx->compound_statement()) 会炸，
-  //例如归并排序msort的函数实现本身就带有递归自调用msort，此时 self(ctx->compound_statement()) 在内部识别到 msort(l,r) 而生成一个 make<CallExpr> 节点，
-  //但由于函数名未加入符号表，于是助教们写的代码给你 ABORT(); 了
-  // if(((*mSymtbl)[ret->name])==nullptr){
-  //   (*mSymtbl)[ret->name] = ret;
-  //   if(ctx->compoundStatement())
-  //     ret->body = self(ctx->compoundStatement());
-  // }
-  // else{//有时也会重定义，这时我们可以保留那种带有ret->body的函数声明
-  //   if(ctx->compoundStatement()){
-  //     (*mSymtbl)[ret->name] = ret;
-  //     ret->body = self(ctx->compoundStatement());
+  // //modify：本地符号表，保存当前作用域的所有声明
+  // if (auto p = ctx->parameterList()) {
+  //   for(auto&& i : p->parameterDeclaration()) {
+  //     auto decl = self(i);
+  //     localDecls[decl->name] = decl;
+  //     funcType->params.push_back(decl);
+  //     ret->params.push_back(decl->);
+  //   }
+  //   auto children = p->children; //要使用children成员，必须是一个vector
+  //   for (auto i = 0; i < children.size(); i += 3) {
+  //     auto specs =
+  //       self(dynamic_cast<ast::DeclarationSpecifiersContext*>(children[i]));
+  //     ret->params.push_back(self(
+  //       dynamic_cast<ast::InitDeclaratorContext*>(children[i + 1]), specs));
   //   }
   // }
-  
+
+  Symtbl localDecls(self);  // 本地符号表，保存当前作用域的所有声明
+
+  if (auto plist = ctx->parameterList()) {
+      for (auto&& param : plist->parameterDeclaration()) {
+          //Decl* paramDecl = self(param);  // self(param) 应该返回一个 Decl* 或 ParamDecl*
+          Decl* paramDecl= make<VarDecl>();
+          if (!paramDecl) continue;  // 防御性检查，避免空指针
+          localDecls[paramDecl->name] = paramDecl;      // ✅ 存入局部符号表
+          funcType->params.push_back(paramDecl->type);  // ✅ 取类型进函数类型列表
+          ret->params.push_back(paramDecl);             // ✅ 记录形参声明
+          
+      }
+  }
+  // 函数定义在签名之后就加入符号表，以允许递归调用
+  //(*mSymtbl)[ret->name] = ret;
+  //ret->body = self(ctx->compoundStatement());
+  if(((*mSymtbl)[ret->name])==nullptr){
+    (*mSymtbl)[ret->name] = ret;
+    if(ctx->compoundStatement())
+      ret->body = self(ctx->compoundStatement());
+  }
+  else{//有时也会重定义，这时我们可以保留那种带有ret->body的函数声明
+    if(ctx->compoundStatement()){
+      (*mSymtbl)[ret->name] = ret;
+      ret->body = self(ctx->compoundStatement());
+    }
+  }
+
   return ret;
 }
-
-//new
-Decl*
-Ast2Asg::operator()(ast::ParameterDeclarationContext* ctx)
-{
-  auto sq = self(ctx->declarationSpecifiers());
-  auto [texp, name] = self(ctx->declarator(), nullptr);
-  auto type = make<Type>();
-  type->spec = sq.first;
-  type->qual = sq.second;
-  type->texp = texp;
-  auto decl = make<VarDecl>();////////////30卡了很久，不是decl
-  decl->type =type;
-  decl->name = name;
-  return decl;
-}
-
 
 Decl*
 Ast2Asg::operator()(ast::InitDeclaratorContext* ctx, SpecQual sq)
 {
-  auto [texp, name] = self(ctx->declarator(), nullptr);
-  Decl* ret;
+  ////////////////////////////////int传不进去
+  std::cout<<"InitDeclaratorContext* ctx"<<ctx->getText()<<std::endl;
 
+  auto [texp, name] = self(ctx->declarator(), nullptr);
+  std::cout<<"name"<<name<<std::endl;
+  Decl* ret;
+  //new
+  if (auto arrayType = texp->dcst<ArrayType>()) {
+    auto vdecl = make<VarDecl>();
+    auto type = make<Type>();
+    vdecl->type = type;
+    
+    type->spec = sq.first;
+    type->qual = sq.second;
+    type->texp = texp;
+    vdecl->name = std::move(name);
+    
+    if (auto p = ctx->initializer()) {
+        vdecl->init = self(p);
+        if (sq.second.const_) {
+            // Additional validation for const arrays
+            if (auto initList = vdecl->init->dcst<InitListExpr>()) {
+                // Validate initializer list matches array dimensions //验证是否正确
+
+            }
+        }
+    }
+    
+    (*mSymtbl)[vdecl->name] = vdecl;
+    return vdecl;
+  }
   if (auto funcType = texp->dcst<FunctionType>()) {
     auto fdecl = make<FunctionDecl>();
     auto type = make<Type>();

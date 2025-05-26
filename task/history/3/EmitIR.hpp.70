@@ -70,7 +70,6 @@ private:
 
   void operator()(asg::WhileStmt* obj);
 
-  bool analyzeTerminator(asg::Stmt* stmt);
 
   void operator()(asg::BreakStmt* obj);
 
@@ -89,8 +88,6 @@ private:
   void operator()(asg::VarDecl* obj);
 
   void trans_init(llvm::Value* val, asg::Expr* obj);
-
-  void handleArrayInitialization(llvm::Value* arrayPtr, llvm::ArrayType* arrType, asg::InitListExpr* initList) ;
   
 
   // TODO: 添加声明处理相关声明

@@ -82,7 +82,13 @@
     "cinttypes": "cpp",
     "typeindex": "cpp",
     "typeinfo": "cpp",
-    "variant": "cpp"
+    "variant": "cpp",
+    "unordered_set": "cpp",
+    "*.inc": "cpp",
+    "*.rfr": "cpp",
+    "*.49": "cpp",
+    "*.70": "cpp",
+    "*.rfr49": "cpp"
   },
 
   //* C/C++

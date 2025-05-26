@@ -58,24 +58,10 @@ lexer grammar SYsULexer;
             extract_pre_num(line);
             extract_path(line);
         }
-
-        // 检测是否遇到普通代码行
-        // void checkIfCodeLine(const std::string& line) {
-        //     if (!line.empty() && line[0] != '#') {
-        //         flag_meet_code = true;
-        //     }
-        // }
 }
 
 // 保留原有token定义
 Int : 'int';
-Void : 'void';
-Char : 'char';
-Float : 'float';
-Double : 'double';
-Short : 'short';
-Long : 'long';
-Const : 'const';
 Return : 'return';
 
 LeftParen : '(';
@@ -91,9 +77,7 @@ Star : '*';
 Slash : '/';
 Percent : '%';
 
-Semi : ';' {
-    flag_meet_code = true; // 遇到分号时设置 flag_meet_code = true
-};
+Semi : ';';
 Comma : ',';
 
 Equal : '=';
@@ -112,8 +96,6 @@ If : 'if';
 Else : 'else';
 While : 'while';
 For : 'for';
-Continue :'continue';
-Break : 'break';
 
 Identifier
     :   IdentifierNondigit
@@ -184,10 +166,6 @@ HexadecimalDigit
     :   [0-9a-fA-F]
     ;
 
-<<<<<<< Updated upstream
-// 预处理信息处理，可以从预处理信息中获得文件名以及行号
-// 预处理信息中的第一个数字即为行号
-=======
 fragment
 FloatingConstant
     :   DecimalFloatingConstant
@@ -254,7 +232,6 @@ EscapeSequence
     ;
 
 // 处理预处理指令，提取文件路径和行号
->>>>>>> Stashed changes
 LineAfterPreprocessing
     : '#' ~[\r\n]* {
         if (flag_meet_code) {
@@ -265,21 +242,25 @@ LineAfterPreprocessing
     } -> skip
     ;
 
-// 处理换行符
+// 处理普通代码行(不作为token,只作为逻辑)
+//CodeLine
+//    : ~[\r\n]+ {
+//        flag_meet_code = true;
+//    } -> channel(HIDDEN)
+//    ;
+
+Whitespace
+    :   [ \t]+
+    ;
+
 Newline
     :   ( '\r' '\n'?
         | '\n'
         )
         {
             customLine++;
-            // 检查当前行是否是普通代码行
-            //checkIfCodeLine( getText());
         }
-        //-> skip
-    ;
-
-Whitespace
-    :   [ \t]+
+        -> skip
     ;
 
 BlockComment

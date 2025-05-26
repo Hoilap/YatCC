@@ -16,7 +16,8 @@ struct Decl;
 
 struct Type : Obj
 {
-  /// 说明（Specifier）
+  /// 说明（Specifier）类型说明符
+
   enum struct Spec : std::uint8_t
   {
     kINVALID,
@@ -27,7 +28,7 @@ struct Type : Obj
     kLongLong,
   };
 
-  /// 限定（Qualifier）
+  /// 限定（Qualifier）类型限定符
   struct Qual
   {
     bool const_{ false };

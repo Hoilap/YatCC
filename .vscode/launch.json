@@ -4,14 +4,23 @@
   // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
   "version": "0.2.0",
   "configurations": [
+    // {
+    //   "name": "(ctest) Launch",
+    //   "type": "cppdbg",
+    //   "request": "launch",
+    //   // Resolved by CMake Tools:
+    //   "cwd": "${cmake.testWorkingDirectory}",
+    //   "program": "${cmake.testProgram}",
+    //   "args": ["${cmake.testArgs}"]
+    // },
     {
-      "name": "(ctest) Launch",
-      "type": "cppdbg",
+      "name": "(lldb) Launch",
+      "type": "lldb",
       "request": "launch",
-      // Resolved by CMake Tools:
-      "cwd": "${cmake.testWorkingDirectory}",
+      "name": "Launch",
       "program": "${cmake.testProgram}",
       "args": ["${cmake.testArgs}"],
+<<<<<<< Updated upstream
       "setupCommands": [
         {
           "description": "Test",
@@ -25,5 +34,9 @@
         }
       ]
     }
+=======
+      "cwd": "${cmake.testWorkingDirectory}"
+     }
+>>>>>>> Stashed changes
   ]
 }

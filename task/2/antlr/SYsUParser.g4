@@ -4,134 +4,174 @@ options {
   tokenVocab=SYsULexer;
 }
 
+// 表达式部分
 primaryExpression
-    :   Identifier
-    |   Constant
+    : Identifier
+    | Constant
+    | LeftParen expression RightParen        // 🔥 新增，支持括号表达式 (a+b) √
     ;
 
 postfixExpression
-    :   primaryExpression  
+    : primaryExpression
+    | postfixExpression LeftBracket expression RightBracket  // 🔥 新增，支持数组访问 a[i]
+    | postfixExpression LeftParen argumentExpressionList? RightParen // 🔥 新增，支持函数调用 f(a,b)
+    ;
+
+argumentExpressionList
+    : assignmentExpression (Comma assignmentExpression)*
     ;
 
 unaryExpression
-    :
-    (postfixExpression
-    |   unaryOperator unaryExpression
-    )
+    : postfixExpression
+    | unaryOperator unaryExpression
     ;
 
 unaryOperator
-    :   Plus | Minus
+    : Plus
+    | Minus
+    | Exclaim
+    ;
+
+multiplicativeExpression
+    : unaryExpression ( (Star | Div | Mod) unaryExpression )* // 🔥 新增，支持乘除模运算
     ;
 
 additiveExpression
-    :   unaryExpression ((Plus|Minus) unaryExpression)*
+    : multiplicativeExpression ( (Plus | Minus) multiplicativeExpression )* // 🔥 改动：加法在乘法之后
     ;
 
+relationalExpression
+    : additiveExpression ( (Less | Greater | LessEqual | GreaterEqual) additiveExpression )* // 🔥 新增，支持 < > <= >=
+    ;
+
+equalityExpression
+    : relationalExpression ( (EqualEqual | ExclaimEqual) relationalExpression )* // 🔥 新增，支持 == !=
+    ;
+
+logicalAndExpression
+    : equalityExpression (AndAnd equalityExpression)* // 🔥 新增，支持 &&
+    ;
+
+logicalOrExpression
+    : logicalAndExpression (OrOr logicalAndExpression)* // 🔥 新增，支持 ||
+    ;
 
 assignmentExpression
-    :   additiveExpression
-    |   unaryExpression Equal assignmentExpression
+    : logicalOrExpression 
+    | unaryExpression Equal assignmentExpression // 🔥 修改：赋值是右结合，允许 a = b = c
     ;
 
 expression
-    :   assignmentExpression (Comma assignmentExpression)*
+    : assignmentExpression (Comma assignmentExpression)* // 🔥 支持逗号表达式
     ;
 
-
-declaration
-    :   declarationSpecifiers initDeclaratorList? Semi
+// 声明与定义
+declaration //int// a=5,b=4//;
+    : declarationSpecifiers initDeclaratorList? Semi
     ;
 
 declarationSpecifiers
-    :   declarationSpecifier+
+    : declarationSpecifier+
     ;
 
 declarationSpecifier
-    :   typeSpecifier
+    : typeSpecifier
     ;
-
-initDeclaratorList
-    :   initDeclarator (Comma initDeclarator)*
-    ;
-
-initDeclarator
-    :   declarator (Equal initializer)?
-    ;
-
 
 typeSpecifier
-    :   Int
+    : Int // 目前仅支持 int 类型，可以扩展
+    | Const
+    | Void
     ;
 
+initDeclaratorList// 多个初始化声明 a=5,b=4;
+    : initDeclarator (Comma initDeclarator)*
+    ;
+
+initDeclarator //
+    : declarator (Equal initializer)?
+    ;
 
 declarator
-    :   directDeclarator
+    : directDeclarator
     ;
 
 directDeclarator
-    :   Identifier
-    |   directDeclarator LeftBracket assignmentExpression? RightBracket
-    ;
-
-identifierList
-    :   Identifier (Comma Identifier)*
+    : Identifier
+    | directDeclarator LeftBracket assignmentExpression? RightBracket // 支持数组声明 a[10]; 多维数组也能递归
     ;
 
 initializer
-    :   assignmentExpression
-    |   LeftBrace initializerList? Comma? RightBrace
+    : assignmentExpression
+    | LeftBrace initializerList (Comma)? RightBrace // 🔥 支持数组初始化 int a[3]={1,2,3}
     ;
 
 initializerList
-    // :   designation? initializer (Comma designation? initializer)*
-    :   initializer (Comma initializer)*
+    : initializer (Comma initializer)*
     ;
 
+// 语句
 statement
-    :   compoundStatement
-    |   expressionStatement
-    |   jumpStatement
+    : compoundStatement
+    | expressionStatement
+    | selectionStatement // 🔥 新增 if else 语句
+    | iterationStatement // 🔥 新增 while 循环
+    | jumpStatement
     ;
 
 compoundStatement
-    :   LeftBrace blockItemList? RightBrace
+    : LeftBrace blockItemList? RightBrace
     ;
 
 blockItemList
-    :   blockItem+
+    : blockItem+
     ;
 
 blockItem
-    :   statement
-    |   declaration
+    : declaration
+    | statement
     ;
 
 expressionStatement
-    :   expression? Semi
+    : expression? Semi
     ;
 
+selectionStatement
+    : If LeftParen expression RightParen statement (Else statement)? // 🔥 支持 if-else
+    ;
 
+iterationStatement
+    : While LeftParen expression RightParen statement // 🔥 支持 while 循环
+    ;
 
 jumpStatement
-    :   (Return expression?)
-    Semi
+    : Return expression? Semi
+    | Continue Semi // 🔥 新增，支持 continue
+    | Break Semi // 🔥 新增，支持 break
     ;
 
-compilationUnit
-    :   translationUnit? EOF
+// 函数定义与编译单元
+functionDefinition
+    : declarationSpecifiers directDeclarator LeftParen parameterList? RightParen (compoundStatement| Semi) // 🔥 修改：函数定义必须是 compoundStatement，不是单独 ;
     ;
 
-translationUnit
-    :   externalDeclaration+
+parameterList//int a,int b
+    : parameterDeclaration (Comma parameterDeclaration)*
+    ;
+
+parameterDeclaration//int//a
+    : declarationSpecifiers declarator
     ;
 
 externalDeclaration
-    :   functionDefinition
-    |   declaration
+    : functionDefinition
+    | declaration
     ;
 
-functionDefinition
-    : declarationSpecifiers directDeclarator LeftParen RightParen compoundStatement
+translationUnit
+    : externalDeclaration+
     ;
 
+compilationUnit
+    : translationUnit? EOF
+    ;

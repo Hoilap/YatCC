@@ -139,7 +139,7 @@ struct Expr : Obj
   };
 
   const Type* type;
-  Cate cate{ Cate::kINVALID };
+  Cate cate{ Cate::kINVALID }; //是左值/右值表达式
 
 protected:
   void __mark__(Mark mark) override;
@@ -159,8 +159,8 @@ struct DeclRefExpr : Expr
 {
   Decl* decl{ nullptr };
 
-private:
-  void __mark__(Mark mark) override;
+  private:
+    void __mark__(Mark mark) override;
 };
 
 struct ParenExpr : Expr
