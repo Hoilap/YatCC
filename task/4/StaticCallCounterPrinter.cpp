@@ -7,6 +7,7 @@ PreservedAnalyses
 StaticCallCounterPrinter::run(Module& mod, ModuleAnalysisManager& mam)
 {
   // 通过MAM执行StaticCallCounter并返回分析结果
+  //StaticCallCounterPrinter调用了定义、实现、注册好的StaticCallCounter
   auto directCalls = mam.getResult<StaticCallCounter>(mod);
 
   mOut << "=================================================\n";

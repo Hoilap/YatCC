@@ -139,8 +139,7 @@ Digit
 
 Constant
     :   IntegerConstant
-    |   FloatingConstant
-    ;
+    |   FloatingConstant ;
 
 fragment
 IntegerConstant

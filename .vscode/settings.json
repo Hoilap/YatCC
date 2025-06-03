@@ -88,7 +88,11 @@
     "*.rfr": "cpp",
     "*.49": "cpp",
     "*.70": "cpp",
-    "*.rfr49": "cpp"
+    "*.rfr49": "cpp",
+    "codecvt": "cpp",
+    "forward_list": "cpp",
+    "ranges": "cpp",
+    "valarray": "cpp"
   },
 
   //* C/C++

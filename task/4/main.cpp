@@ -10,6 +10,10 @@
 #include "Mem2Reg.hpp"
 #include "StaticCallCounter.hpp"
 #include "StaticCallCounterPrinter.hpp"
+#include "DeadCodeElimination.hpp"
+#include "CSE.hpp"
+#include "InstructionCombination.hpp"
+#include "StrengthReduction.hpp"
 
 #ifdef TASK4_LLM
 
@@ -26,12 +30,13 @@ opt(llvm::Module& mod)
 {
   using namespace llvm;
 
-  // 定义分析pass的管理器
+  // 定义分析pass的管理器 一次语义
   LoopAnalysisManager lam;
   FunctionAnalysisManager fam;
   CGSCCAnalysisManager cgam;
   ModuleAnalysisManager mam;
   ModulePassManager mpm;
+  FunctionPassManager fpm;
 
   // 注册分析pass的管理器
   PassBuilder pb;
@@ -53,10 +58,13 @@ opt(llvm::Module& mod)
   Py::module_ sys = Py::module_::import("sys");
   sys.attr("path").attr("append")(TASK4_DIR);
 
+  
   // 添加 LLM 加持的 Pass 到优化管理器中
   mpm.addPass(PassSequencePredict(
-    "<api_key>",
-    "<base_url>",
+    //"sk-4lHwFxtIoAwe4mq6715eEbB93498410bAa5aBfCfD3E266E8",
+    //"https://llm.yatcc-ai.com/v1",
+    "admin",
+    "admin",
     {
       { "StaticCallCounterPrinter",
         TASK4_DIR "/StaticCallCounterPrinter.hpp",
@@ -82,10 +90,15 @@ opt(llvm::Module& mod)
 #else
 
   // 传统 LLVM Pass 来进行编译优化
-  // 添加优化pass到管理器中
+  // 添加优化pass到管理器中   Transform Pass
   mpm.addPass(StaticCallCounterPrinter(llvm::errs()));
-  mpm.addPass(Mem2Reg());
+  mpm.addPass(Mem2Reg()); //减少了store指令
   mpm.addPass(ConstantFolding(llvm::errs()));
+  mpm.addPass(DeadCodeElimination(llvm::errs()));
+  mpm.addPass(CSE(llvm::errs()));
+  //以上能正确运行,但不知道是否优化正确
+  mpm.addPass(InstructionCombination(llvm::errs())); //注意是FunctionPassManager中添加的===不要用function,原因未知
+  //mpm.addPass(StrengthReduction(llvm::errs())); 
 
 #endif
 

@@ -4,6 +4,7 @@
 #include <llvm/IR/PassManager.h>
 #include <llvm/Support/raw_ostream.h>
 
+//所有 Transform Pass 都继承于llvm::PassInfoMixin，该类会接受模板参数中 Transform Pass 的名称将 pass 初始化
 class ConstantFolding : public llvm::PassInfoMixin<ConstantFolding>
 {
 public:

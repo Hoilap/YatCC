@@ -1,7 +1,7 @@
 #pragma once
 
 #include <llvm/ADT/StringRef.h>
-#include <pybind11/pybind11.h>
+#include <pybind11/pybind11.h>  // 要想在 C++ 中使用 Python 语言特性，需要包含此头文件
 
 class LLMHelper
 {

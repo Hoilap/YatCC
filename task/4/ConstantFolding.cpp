@@ -2,6 +2,8 @@
 
 using namespace llvm;
 
+//常量折叠：在编译期对表达式中的常量进行计算，从而减少运行时的计算负担
+///YatCC/test/cases/performance/const-propagation.sysu.c sum = sum + CONST_NUM;
 PreservedAnalyses
 ConstantFolding::run(Module& mod, ModuleAnalysisManager& mam)
 {
@@ -12,8 +14,10 @@ ConstantFolding::run(Module& mod, ModuleAnalysisManager& mam)
     // 遍历每个函数的基本块
     for (auto& bb : func) {
       std::vector<Instruction*> instToErase;
+      
       // 遍历每个基本块的指令
       for (auto& inst : bb) {
+        
         // 判断当前指令是否是二元运算指令
         if (auto binOp = dyn_cast<BinaryOperator>(&inst)) {
           // 获取二元运算指令的左右操作数，并尝试转换为常整数
@@ -28,6 +32,8 @@ ConstantFolding::run(Module& mod, ModuleAnalysisManager& mam)
                 binOp->replaceAllUsesWith(ConstantInt::getSigned(
                   binOp->getType(),
                   constLhs->getSExtValue() + constRhs->getSExtValue()));
+                  //将当前指令 binOp 所有的使用者（即用到它的指令）替换为一个新值（这里是一个新创建的常量）。
+                  //把一个表达式的结果（比如 %1 = add i32 3, 4）直接替换为一个常量值（比如 i32 7）
                 instToErase.push_back(binOp);
                 ++constFoldTimes;
               }

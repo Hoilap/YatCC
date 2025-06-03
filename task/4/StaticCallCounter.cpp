@@ -9,7 +9,7 @@ StaticCallCounter::run(Module& mod, ModuleAnalysisManager&)
 
   for (auto& func : mod) {
     for (auto& bb : func) {
-      for (auto& inst : bb) {
+      for (auto& inst : bb) { //获取每个基本块中的指令
         // 尝试转为CallInst
         auto* callInst = dyn_cast<CallInst>(&inst);
         if (callInst == nullptr) {
@@ -35,4 +35,4 @@ StaticCallCounter::run(Module& mod, ModuleAnalysisManager&)
   return result;
 }
 
-AnalysisKey StaticCallCounter::Key;
+AnalysisKey StaticCallCounter::Key; //static llvm::AnalysisKey Key是一个静态成员变量，在实现时需要额外声明，否则会出现静态变量未声明的报错。

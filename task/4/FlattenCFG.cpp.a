@@ -1,0 +1,15 @@
+struct FlattenCFG : PassInfoMixin<FlattenCFG> {
+  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
+};
+
+PreservedAnalyses FlattenCFG::run(Function &F,
+                                      FunctionAnalysisManager &AM) {
+  bool EverChanged = false;
+  AliasAnalysis *AA = &AM.getResult<AAManager>(F);
+  // iterativelyFlattenCFG can make some blocks dead.
+  while (iterativelyFlattenCFG(F, AA)) {
+    removeUnreachableBlocks(F);
+    EverChanged = true;
+  }
+  return EverChanged ? PreservedAnalyses::none() : PreservedAnalyses::all();
+}
