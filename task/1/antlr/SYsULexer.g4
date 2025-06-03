@@ -183,10 +183,6 @@ HexadecimalDigit
     :   [0-9a-fA-F]
     ;
 
-<<<<<<< Updated upstream
-// 预处理信息处理，可以从预处理信息中获得文件名以及行号
-// 预处理信息中的第一个数字即为行号
-=======
 fragment
 FloatingConstant
     :   DecimalFloatingConstant
@@ -253,7 +249,6 @@ EscapeSequence
     ;
 
 // 处理预处理指令，提取文件路径和行号
->>>>>>> Stashed changes
 LineAfterPreprocessing
     : '#' ~[\r\n]* {
         if (flag_meet_code) {
