@@ -96,7 +96,6 @@ opt(llvm::Module& mod)
   mpm.addPass(ConstantFolding(llvm::errs()));
   mpm.addPass(DeadCodeElimination(llvm::errs()));
   mpm.addPass(CSE(llvm::errs()));
-  //以上能正确运行,但不知道是否优化正确
   mpm.addPass(InstructionCombination(llvm::errs())); //注意是FunctionPassManager中添加的===不要用function,原因未知
   //mpm.addPass(StrengthReduction(llvm::errs())); 
 

@@ -92,7 +92,8 @@
     "codecvt": "cpp",
     "forward_list": "cpp",
     "ranges": "cpp",
-    "valarray": "cpp"
+    "valarray": "cpp",
+    "*.def": "cpp"
   },
 
   //* C/C++
