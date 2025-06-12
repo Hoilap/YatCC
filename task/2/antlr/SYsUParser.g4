@@ -5,20 +5,37 @@ options {
 }
 
 // 表达式部分
-primaryExpression
-    : Identifier
-    | Constant
-    | LeftParen expression RightParen        // 🔥 新增，支持括号表达式 (a+b) √
+expression
+    : assignmentExpression (Comma assignmentExpression)* // 🔥 支持逗号表达式
     ;
 
-postfixExpression
-    : primaryExpression
-    | postfixExpression LeftBracket expression RightBracket  // 🔥 新增，支持数组访问 a[i]
-    | postfixExpression LeftParen argumentExpressionList? RightParen // 🔥 新增，支持函数调用 f(a,b)
+assignmentExpression
+    : logicalOrExpression 
+    | unaryExpression Equal assignmentExpression // 🔥 修改：赋值是右结合，允许 a = b = c
     ;
 
-argumentExpressionList
-    : assignmentExpression (Comma assignmentExpression)*
+logicalOrExpression
+    : logicalAndExpression (OrOr logicalAndExpression)* // 🔥 新增，支持 ||
+    ;
+
+logicalAndExpression
+    : equalityExpression (AndAnd equalityExpression)* // 🔥 新增，支持 &&
+    ;
+
+equalityExpression
+    : relationalExpression ( (EqualEqual | ExclaimEqual) relationalExpression )* // 🔥 新增，支持 == !=
+    ;
+
+relationalExpression
+    : additiveExpression ( (Less | Greater | LessEqual | GreaterEqual) additiveExpression )* // 🔥 新增，支持 < > <= >=
+    ;
+
+additiveExpression
+    : multiplicativeExpression ( (Plus | Minus) multiplicativeExpression )* // 🔥 改动：加法在乘法之后
+    ;
+
+multiplicativeExpression
+    : unaryExpression ( (Star | Div | Mod) unaryExpression )* // 🔥 新增，支持乘除模运算
     ;
 
 unaryExpression
@@ -32,38 +49,31 @@ unaryOperator
     | Exclaim
     ;
 
-multiplicativeExpression
-    : unaryExpression ( (Star | Div | Mod) unaryExpression )* // 🔥 新增，支持乘除模运算
+postfixExpression
+    : primaryExpression
+    | postfixExpression LeftBracket expression RightBracket  // 🔥 新增，支持数组访问 a[i]
+    | postfixExpression LeftParen argumentExpressionList? RightParen // 🔥 新增，支持函数调用 f(a,b)
+    ;
+    
+primaryExpression
+    : Identifier
+    | Constant
+    | LeftParen expression RightParen        // 🔥 新增，支持括号表达式 (a+b) √
     ;
 
-additiveExpression
-    : multiplicativeExpression ( (Plus | Minus) multiplicativeExpression )* // 🔥 改动：加法在乘法之后
+argumentExpressionList
+    : assignmentExpression (Comma assignmentExpression)*
     ;
 
-relationalExpression
-    : additiveExpression ( (Less | Greater | LessEqual | GreaterEqual) additiveExpression )* // 🔥 新增，支持 < > <= >=
-    ;
 
-equalityExpression
-    : relationalExpression ( (EqualEqual | ExclaimEqual) relationalExpression )* // 🔥 新增，支持 == !=
-    ;
 
-logicalAndExpression
-    : equalityExpression (AndAnd equalityExpression)* // 🔥 新增，支持 &&
-    ;
 
-logicalOrExpression
-    : logicalAndExpression (OrOr logicalAndExpression)* // 🔥 新增，支持 ||
-    ;
 
-assignmentExpression
-    : logicalOrExpression 
-    | unaryExpression Equal assignmentExpression // 🔥 修改：赋值是右结合，允许 a = b = c
-    ;
 
-expression
-    : assignmentExpression (Comma assignmentExpression)* // 🔥 支持逗号表达式
-    ;
+
+
+
+
 
 // 声明与定义
 declaration //int// a=5,b=4//;

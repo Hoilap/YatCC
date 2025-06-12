@@ -61,10 +61,10 @@ opt(llvm::Module& mod)
   
   // 添加 LLM 加持的 Pass 到优化管理器中
   mpm.addPass(PassSequencePredict(
-    //"sk-4lHwFxtIoAwe4mq6715eEbB93498410bAa5aBfCfD3E266E8",
-    //"https://llm.yatcc-ai.com/v1",
-    "admin",
-    "admin",
+    "sk-4lHwFxtIoAwe4mq6715eEbB93498410bAa5aBfCfD3E266E8",
+    "https://llm.yatcc-ai.com/v1",
+    //"admin",
+    //"admin",
     {
       { "StaticCallCounterPrinter",
         TASK4_DIR "/StaticCallCounterPrinter.hpp",
@@ -97,7 +97,7 @@ opt(llvm::Module& mod)
   mpm.addPass(DeadCodeElimination(llvm::errs()));
   mpm.addPass(CSE(llvm::errs()));
   mpm.addPass(InstructionCombination(llvm::errs())); //注意是FunctionPassManager中添加的===不要用function,原因未知
-  //mpm.addPass(StrengthReduction(llvm::errs())); 
+  mpm.addPass(StrengthReduction(llvm::errs())); 
 
 #endif
 
