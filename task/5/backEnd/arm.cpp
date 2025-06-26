@@ -514,47 +514,213 @@ void MI_Use::rm_use(Func_Asm *func) {
 
 // __________________________________task5 begin_______________________________________
 
+// // 生成mov指令
+// MI_Move *emit_move(MOperand dst, MOperand src, Machine_Block *mb) {
+//     // todo
+// }
+
+// // 生成二元运算指令
+// void emit_Binary(InstructionPtr I, Machine_Block *mb) {
+//     auto bi_I = dynamic_cast<BinaryInstruction *>(I.get());
+//     string myop;
+//     myop += bi_I->op;
+//     auto op_type = Binary_ir2asm[myop];  // 查找对应的二元操作类型
+    
+//     // 处理取模运算(%)，ARM没有直接的取模指令，需要特殊处理
+//     if (op_type == BINARY_MOD) {
+//         // todo
+//     } 
+//     // 处理一元非运算(!x)，转化为1-x
+//     else if (op_type == UNARY_XOR) {
+//         // todo
+//     } 
+//     // 处理其他二元操作
+//     else {
+//         // todo
+//     }
+// }
+
+// // 生成比较指令
+// void emit_Icmp(InstructionPtr I, Machine_Block *mb) {
+//     // todo
+// }
+
+// // 生成分支指令
+// void emit_Branch(Func_Asm *func_asm, InstructionPtr I, Machine_Block *mb) {
+//     // todo
+// }
+
+// // 生成返回指令
+// void emit_Return(Func_Asm *func_asm, InstructionPtr I, Machine_Block *mb) {
+//     // todo
+// }
 // 生成mov指令
-MI_Move *emit_move(MOperand dst, MOperand src, Machine_Block *mb) {
-    // todo
+MI_Move* emit_move(MOperand dst, MOperand src, Machine_Block* mb) {
+    // 如果源是负数且可以表示为正数取反，使用mvn指令优化
+    if (src.tag == IMM && src.value < 0) {
+        int32_t positive_val = -src.value - 1;
+        if (can_be_imm_ror(positive_val)) {
+            auto mv = new MI_Move(dst, make_imm(positive_val));
+            mv->neg = true;
+            if (mb) mb->push((MI*)mv);
+            return mv;
+        }
+    }
+    
+    auto mv = new MI_Move(dst, src);
+    if (mb) mb->push((MI*)mv);
+    return mv;
 }
 
 // 生成二元运算指令
-void emit_Binary(InstructionPtr I, Machine_Block *mb) {
-    auto bi_I = dynamic_cast<BinaryInstruction *>(I.get());
+void emit_Binary(InstructionPtr I, Machine_Block* mb) {
+    auto bi_I = dynamic_cast<BinaryInstruction*>(I.get());
     string myop;
     myop += bi_I->op;
-    auto op_type = Binary_ir2asm[myop];  // 查找对应的二元操作类型
+    auto op_type = Binary_ir2asm[myop];
     
-    // 处理取模运算(%)，ARM没有直接的取模指令，需要特殊处理
+    auto lhs = make_operand(bi_I->getOperand(0), mb, true);
+    auto rhs = make_operand(bi_I->getOperand(1), mb, true);
+    auto dst = make_operand(bi_I->reg, mb, true);
+
+    // 处理取模运算(%)，使用乘法和减法实现
     if (op_type == BINARY_MOD) {
-        // todo
+        // 计算商
+        auto div_reg = make_vreg(vreg_count++);
+        auto div_inst = new MI_Binary(BINARY_DIVIDE, div_reg, lhs, rhs);
+        mb->push((MI*)div_inst);
+        
+        // 计算商*除数
+        auto mul_reg = make_vreg(vreg_count++);
+        auto mul_inst = new MI_Binary(BINARY_MULTIPLY, mul_reg, div_reg, rhs);
+        mb->push((MI*)mul_inst);
+        
+        // 计算余数 = 被除数 - 商*除数
+        auto mod_inst = new MI_Binary(BINARY_SUBTRACT, dst, lhs, mul_reg);
+        mb->push((MI*)mod_inst);
     } 
     // 处理一元非运算(!x)，转化为1-x
     else if (op_type == UNARY_XOR) {
-        // todo
+        auto one_reg = make_vreg(vreg_count++);
+        emit_load_of_constant(one_reg, 1, mb);
+        
+        auto not_inst = new MI_Binary(BINARY_SUBTRACT, dst, one_reg, lhs);
+        mb->push((MI*)not_inst);
     } 
     // 处理其他二元操作
     else {
-        // todo
+        auto bi_inst = new MI_Binary(op_type, dst, lhs, rhs);
+        mb->push((MI*)bi_inst);
     }
 }
 
 // 生成比较指令
-void emit_Icmp(InstructionPtr I, Machine_Block *mb) {
-    // todo
+void emit_Icmp(InstructionPtr I, Machine_Block* mb) {
+    auto icmp_I = dynamic_cast<IcmpInstruction*>(I.get());
+    auto lhs = make_operand(icmp_I->getOperand(0), mb, true);
+    auto rhs = make_operand(icmp_I->getOperand(1), mb, true);
+    
+    auto cmp_inst = new MI_Compare(lhs, rhs);
+    mb->push((MI*)cmp_inst);
+    
+    // 根据比较结果设置条件标志
+    auto cond = binary_op_to_branch_cond(Binary_ir2asm[icmp_I->op]);
+    auto dst = make_operand(icmp_I->reg, mb, true);
+    
+    // 默认false (0)
+    auto mov_false = new MI_Move(dst, make_imm(0));
+    mov_false->cond = invert_branch_cond(cond);
+    mb->push((MI*)mov_false);
+    
+    // 条件成立时设为1
+    auto mov_true = new MI_Move(dst, make_imm(1));
+    mov_true->cond = cond;
+    mb->push((MI*)mov_true);
 }
 
 // 生成分支指令
-void emit_Branch(Func_Asm *func_asm, InstructionPtr I, Machine_Block *mb) {
-    // todo
+void emit_Branch(Func_Asm* func_asm, InstructionPtr I, Machine_Block* mb) {
+    auto br_I = dynamic_cast<BrInstruction*>(I.get());
+    
+    // 无条件分支
+    if (!br_I->exp) {
+        auto br_inst = new MI_Branch();
+        br_inst->cond = NO_CONDITION;
+        //br_inst->true_target = func_asm->mbs[func_asm->bb2idx[br_I->label_true]];
+        BasicBlockPtr true_bb = nullptr;
+        for (auto &pair : func_asm->bb2idx) {
+            if (pair.first->label->name == br_I->label_true->name) {
+                true_bb = pair.first;
+                break;
+            }
+        }
+        printf("true_bb name: %s\n", true_bb->label->name.c_str());
+        assert(true_bb && "Cannot find true_bb for branch!");
+        br_inst->true_target = func_asm->mbs[func_asm->bb2idx[true_bb]];
+
+        mb->push((MI*)br_inst);
+        mb->control_transfer_inst = (MI*)br_inst;
+        return;
+    }
+    
+    // 条件分支 - 首先处理条件表达式
+    auto cmp_inst = new MI_Compare(
+        make_operand(br_I->exp, mb, true),
+        make_imm(0)
+    );
+    mb->push((MI*)cmp_inst);
+    
+    // 获取比较操作对应的条件码
+    auto cond = binary_op_to_branch_cond(Binary_ir2asm[br_I->exp->getStr()]);
+    
+    // 创建条件分支指令
+    auto br_inst = new MI_Branch();
+    br_inst->cond = cond;
+    // br_inst->true_target =  dynamic_cast<Machine_Block*>(br_I->label_true); //func_asm->mbs[func_asm->bb2idx[br_I->label_true]];
+    // br_inst->false_target = func_asm->mbs[func_asm->bb2idx[br_I->label_false]];
+    BasicBlockPtr true_bb = nullptr;
+    for (auto &pair : func_asm->bb2idx) {
+        if (pair.first->label->name == br_I->label_true->name) {
+            true_bb = pair.first;
+            break;
+        }
+    }
+    assert(true_bb && "Cannot find true_bb for branch!");
+    br_inst->true_target = func_asm->mbs[func_asm->bb2idx[true_bb]];
+    // 查找label_false对应的IR基本块
+    BasicBlockPtr false_bb = nullptr;
+    for (auto &pair : func_asm->bb2idx) {
+        if (pair.first->label->name == br_I->label_false->name) {
+            false_bb = pair.first;
+            break;
+        }
+    }
+    assert(false_bb && "Cannot find false_bb for branch!");
+
+    // 赋值
+    br_inst->true_target = func_asm->mbs[func_asm->bb2idx[true_bb]];
+    br_inst->false_target = func_asm->mbs[func_asm->bb2idx[false_bb]];
+
+    
+    mb->push((MI*)br_inst);
+    mb->control_transfer_inst = (MI*)br_inst;
 }
 
 // 生成返回指令
-void emit_Return(Func_Asm *func_asm, InstructionPtr I, Machine_Block *mb) {
-    // todo
+void emit_Return(Func_Asm* func_asm, InstructionPtr I, Machine_Block* mb) {
+    auto ret_I = dynamic_cast<ReturnInstruction*>(I.get());
+    
+    // 如果有返回值，将其移动到r0
+    if (!ret_I->retValue->isVoid) {
+        auto ret_val = make_operand(ret_I->retValue, mb, true);
+        emit_move(make_reg(r0), ret_val, mb);
+    }
+    
+    // 生成返回指令
+    auto ret_inst = new MI_Return();
+    mb->push((MI*)ret_inst);
+    mb->control_transfer_inst = (MI*)ret_inst;
 }
-
 // __________________________________task5 end_________________________________________
 
 // 生成Load指令，将立即数值加载到虚拟寄存器中

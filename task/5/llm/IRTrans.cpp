@@ -92,7 +92,7 @@ IrTransform::Ir2Asm(IrTransform::IrTransformInfo& mirTransformInfo)
     // 使用正则表达式去除所有<>及其之间的内容
     std::regex tag_regex("<[^>]*>");
     response = std::regex_replace(response, tag_regex, "");
-
+    printf("response: %s\n", response.c_str());
     write_file(mirTransformInfo.mAsmPath, response);
 
     // 删除会话

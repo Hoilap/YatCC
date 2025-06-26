@@ -55,7 +55,7 @@ int main(int argc, char ** argv) {
   IrTransform::IrTransformInfo mIrTransformInfo;
   mIrTransformInfo.mIRPath = argv[2];
   mIrTransformInfo.mAsmPath = argv[3];
-  IrTransform irTrans("<api-key>", "<api-url>", mIrTransformInfo);
+  IrTransform irTrans("sk-4lHwFxtIoAwe4mq6715eEbB93498410bAa5aBfCfD3E266E8", "https://llm.yatcc-ai.com/v1", mIrTransformInfo);
   irTrans.Ir2Asm(mIrTransformInfo);
 #else
   auto program_asm=emit_asm(visitor.irModule);
